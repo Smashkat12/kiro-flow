@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
-  chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
+  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -99,6 +99,31 @@ test('orchestrator agent validates against the Kiro schema and trusts the core 1
   assert.equal(agent.toolsSettings.subagent.availableAgents.length, 12);
   assert.ok(agent.toolsSettings.subagent.availableAgents.every((a) => a.startsWith('kf-')));
   assert.ok(agent.tools.includes('subagent'));
+});
+
+test('init --exclude drops a category, persists exclude.json, and prunes prior emits', () => {
+  const dir = makeFixtureWorkspace();
+  try {
+    // add a droppable category + a stale previously-emitted agent from it
+    mkdirSync(join(dir, '.claude', 'agents', 'flow-nexus'), { recursive: true });
+    writeFileSync(join(dir, '.claude', 'agents', 'flow-nexus', 'sandbox.md'),
+      '---\nname: sandbox\ndescription: cloud sandbox\n---\n\nCloud sandbox agent.\n');
+    mkdirSync(join(dir, '.kiro', 'agents', 'prompts'), { recursive: true });
+    writeFileSync(join(dir, '.kiro', 'agents', 'kf-sandbox.json'), '{"name":"kf-sandbox"}'); // stale prior emit
+    writeFileSync(join(dir, '.kiro', 'agents', 'prompts', 'kf-sandbox.md'), 'stale');
+
+    initWorkspace({ dir, skipRufloInit: true, excludeCategories: ['flow-nexus'] });
+
+    // excluded agent is gone (pruned), a normal one survives
+    assert.ok(!existsSync(join(dir, '.kiro', 'agents', 'kf-sandbox.json')), 'excluded agent pruned');
+    assert.ok(!existsSync(join(dir, '.kiro', 'agents', 'prompts', 'kf-sandbox.md')), 'excluded prompt pruned');
+    assert.ok(existsSync(join(dir, '.kiro', 'agents', 'kf-coder.json')), 'non-excluded agent kept');
+    // exclusion persisted → a plain re-init keeps honoring it
+    const ex = JSON.parse(readFileSync(join(dir, '.kiro', 'kiro-flow', 'exclude.json'), 'utf8'));
+    assert.deepEqual(ex.categories, ['flow-nexus']);
+    initWorkspace({ dir, skipRufloInit: true });
+    assert.ok(!existsSync(join(dir, '.kiro', 'agents', 'kf-sandbox.json')), 'still excluded on plain re-init');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('flagship agents (orchestrator/queen) route to the opus tier', () => {

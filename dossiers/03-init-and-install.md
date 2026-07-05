@@ -122,7 +122,14 @@ kiro-flow models                       # tier→model map + which agents pin wha
 kiro-flow skills add --all             # installs the full published set (~33 skills)
 kiro-flow skills list                  # confirm ▪ installed + the always-on token total
 
-kiro-cli agent list                    # expect kf-orchestrator + 73 kf-* agents
+# Drop the Flow Nexus hosted-cloud pieces (unused on a self-hosted/Bedrock Kiro):
+kiro-flow skills remove flow-nexus-neural flow-nexus-platform flow-nexus-swarm
+kiro-flow init --exclude flow-nexus    # drops the 9 flow-nexus agents; persisted
+                                       # in .kiro/kiro-flow/exclude.json + pruned on
+                                       # every re-init. (0 flow-nexus MCP tools exist,
+                                       # so nothing to remove there.)
+
+kiro-cli agent list                    # expect kf-orchestrator + the kf-* library
 kiro-cli chat --agent kf-orchestrator
 #   Prompt: "Fan out: have kf-planner draft a 3-step plan for X and store it in memory."
 #   Expect: subagent call → kf-planner, then @claude-flow/memory_store.

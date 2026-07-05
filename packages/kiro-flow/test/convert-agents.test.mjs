@@ -153,3 +153,18 @@ test('corpus: golden snapshots', { skip: !hasCorpus }, () => {
     assert.deepEqual(byName.get(golden), expected, `${golden} drifted from golden file`);
   }
 });
+
+test('corpus: exclude drops a category, records it, and never dangles a roster', { skip: !hasCorpus }, () => {
+  const base = convertAgents({ source: CORPUS, out: '/nonexistent', write: false });
+  const ex = convertAgents({ source: CORPUS, out: '/nonexistent', write: false, exclude: { categories: ['flow-nexus'] } });
+  assert.ok(ex.agents.length < base.agents.length, 'excluding flow-nexus should drop agents');
+  assert.ok(ex.report.excluded.length > 0);
+  assert.ok(ex.report.excluded.every((n) => n.startsWith('kf-flow-nexus-')), 'only flow-nexus agents excluded');
+  assert.ok(!ex.agents.some((a) => a.json.name.includes('flow-nexus')), 'no flow-nexus agent emitted');
+  // no surviving coordinator may reference an excluded agent
+  for (const { json } of ex.agents) {
+    for (const r of json.toolsSettings?.subagent?.availableAgents ?? []) {
+      assert.ok(!r.includes('flow-nexus'), `${json.name} roster dangles excluded ${r}`);
+    }
+  }
+});

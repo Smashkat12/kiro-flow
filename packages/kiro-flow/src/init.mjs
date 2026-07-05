@@ -81,6 +81,28 @@ export function resolveModelMap(dir) {
   return DEFAULT_MODEL_MAP;
 }
 
+/** Path of the workspace agent-exclusion file (reproducible: honored on every init). */
+export const EXCLUDE_REL = join('.kiro', 'kiro-flow', 'exclude.json');
+
+/**
+ * Resolve the agent exclusions for a workspace: the persisted
+ * `.kiro/kiro-flow/exclude.json` ({categories, names}) with any new categories
+ * merged in. Excluded agents are never converted, and init prunes any that
+ * were emitted by a prior run — so `kiro-flow init --exclude flow-nexus` once
+ * keeps them gone across future re-inits.
+ */
+export function resolveExclude(dir, addCategories = [], addNames = []) {
+  const p = join(dir, EXCLUDE_REL);
+  let cur = { categories: [], names: [] };
+  if (existsSync(p)) {
+    try { cur = { categories: [], names: [], ...JSON.parse(readFileSync(p, 'utf8')) }; }
+    catch { /* malformed → treat as empty */ }
+  }
+  cur.categories = [...new Set([...cur.categories, ...addCategories])].sort();
+  cur.names = [...new Set([...cur.names, ...addNames])].sort();
+  return cur;
+}
+
 /**
  * @param {string[]} [coreKfNames] the kf-* agents to register with the
  * subagent tool — pass the manifest's core selection so the orchestrator only
@@ -228,9 +250,10 @@ function runRufloInit(dir, { force }) {
  * @param {boolean} [opts.force]
  * @param {boolean} [opts.skipRufloInit]  tests / already-initialized workspaces
  * @param {boolean} [opts.cleanCc]  remove inert Claude-Code files after init (default true)
+ * @param {string[]} [opts.excludeCategories]  agent source categories to exclude (persisted, reproducible)
  * @returns {{steps: Array<{step: string, status: string, detail?: string}>}}
  */
-export function initWorkspace({ dir, force = false, skipRufloInit = false, cleanCc = true }) {
+export function initWorkspace({ dir, force = false, skipRufloInit = false, cleanCc = true, excludeCategories = [] }) {
   const steps = [];
   const step = (name, status, detail) => steps.push({ step: name, status, ...(detail ? { detail } : {}) });
 
@@ -252,13 +275,28 @@ export function initWorkspace({ dir, force = false, skipRufloInit = false, clean
   const modelMap = resolveModelMap(dir);
   step(MODEL_MAP_REL, writeIfChanged(join(dir, MODEL_MAP_REL), JSON.stringify(modelMap, null, 2) + '\n'));
 
+  // 2b. agent exclusions — persisted so re-inits keep excluded categories out.
+  const exclude = resolveExclude(dir, excludeCategories);
+  if (exclude.categories.length || exclude.names.length) {
+    step(EXCLUDE_REL, writeIfChanged(join(dir, EXCLUDE_REL), JSON.stringify(exclude, null, 2) + '\n'));
+  }
+
   // 2. convert agents
   const agentSource = join(dir, '.claude', 'agents');
   let coreKfNames;
   if (existsSync(agentSource)) {
-    const { report, manifest } = convertAgents({ source: agentSource, out: join(dir, '.kiro', 'agents'), modelMap });
+    const { report, manifest } = convertAgents({ source: agentSource, out: join(dir, '.kiro', 'agents'), modelMap, exclude });
     coreKfNames = manifest.filter((a) => a.core).map((a) => a.name);
-    step('convert agents', 'done', `${report.counts.emitted} agents (${report.counts.skipped} skipped, ${report.counts.deduped} deduped; core: ${coreKfNames.length})`);
+    // prune any excluded agents an earlier run had emitted (json + prompt)
+    let pruned = 0;
+    for (const kfName of new Set(report.excluded)) {
+      for (const p of [
+        join(dir, '.kiro', 'agents', `${kfName}.json`),
+        join(dir, '.kiro', 'agents', 'prompts', `${kfName}.md`),
+      ]) if (existsSync(p)) { rmSync(p, { force: true }); pruned += 1; }
+    }
+    const exDetail = report.excluded.length ? `; ${new Set(report.excluded).size} excluded${pruned ? `, ${pruned} pruned` : ''}` : '';
+    step('convert agents', 'done', `${report.counts.emitted} agents (${report.counts.skipped} skipped, ${report.counts.deduped} deduped; core: ${coreKfNames.length}${exDetail})`);
   } else {
     step('convert agents', 'skipped', 'no .claude/agents directory');
   }

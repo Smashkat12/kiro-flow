@@ -189,7 +189,10 @@ export function convertAgents(opts) {
     write = true,
     hooks = true,
     modelMap = DEFAULT_MODEL_MAP,
+    exclude = {},
   } = opts;
+  const excludeCats = new Set(exclude.categories ?? []);
+  const excludeNames = new Set(exclude.names ?? []);
 
   const liveCfTools = new Set(JSON.parse(readFileSync(toolsDataPath, 'utf8')));
   const profiles = JSON.parse(readFileSync(profilesPath, 'utf8'));
@@ -203,6 +206,7 @@ export function convertAgents(opts) {
     toolRenames: {},
     droppedTools: {},
     verifyAtWork: [],
+    excluded: [],
   };
 
   // ── discover + parse ──
@@ -222,7 +226,14 @@ export function convertAgents(opts) {
       report.skipped.push({ file: rel, reason: 'type: documentation' });
       continue;
     }
-    parsed.push({ rel, name: sanitizeName(attrs.name), attrs, body });
+    const name = sanitizeName(attrs.name);
+    const category = categoryOf(rel);
+    if (excludeCats.has(category) || excludeNames.has(name) || excludeNames.has(`kf-${name}`)) {
+      report.skipped.push({ file: rel, reason: `excluded (${excludeCats.has(category) ? `category ${category}` : 'name'})` });
+      report.excluded.push(`kf-${name}`);
+      continue;
+    }
+    parsed.push({ rel, name, attrs, body });
   }
 
   // ── dedup by agent name: longest body wins, tie → first path ──

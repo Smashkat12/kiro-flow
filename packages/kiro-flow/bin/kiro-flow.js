@@ -44,6 +44,7 @@ Options (init):
   --force             rerun ruflo init over an initialized workspace
   --skip-ruflo-init   only the Kiro-side steps (convert, mcp.json, steering, orchestrator)
   --keep-cc           keep inert Claude-Code files (default: remove CLAUDE.md, .mcp.json, .claude/settings.json)
+  --exclude <cats>    comma-sep agent source categories to drop (e.g. flow-nexus); persisted + pruned on re-init
 
 Options (convert agents):
   --source <dir>      persona dir (default: .claude/agents)
@@ -126,11 +127,13 @@ if (cmd === 'convert' && sub === 'agents') {
       force: { type: 'boolean', default: false },
       'skip-ruflo-init': { type: 'boolean', default: false },
       'keep-cc': { type: 'boolean', default: false },
+      exclude: { type: 'string' },
     },
   });
   const dir = resolve(values.dir);
+  const excludeCategories = (values.exclude ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   console.log(`kiro-flow init → ${dir}\n`);
-  const { steps } = initWorkspace({ dir, force: values.force, skipRufloInit: values['skip-ruflo-init'], cleanCc: !values['keep-cc'] });
+  const { steps } = initWorkspace({ dir, force: values.force, skipRufloInit: values['skip-ruflo-init'], cleanCc: !values['keep-cc'], excludeCategories });
   for (const s of steps) console.log(`  ${s.status === 'skipped' ? '·' : '✓'} ${s.step}: ${s.detail ?? s.status}`);
   console.log('\nNext: kiro-flow doctor   (checks kiro-cli, MCP handshake, agents)');
 } else if (cmd === 'doctor') {
