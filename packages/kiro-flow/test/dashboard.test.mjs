@@ -125,6 +125,26 @@ test('renderDashboardHtml: empty workspace shows friendly fallbacks', () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('neural: patterns.json feeds a neural-patterns group in the Learning panel', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'kf-dash-neural-'));
+  try {
+    mkdirSync(join(dir, '.claude-flow', 'neural'), { recursive: true });
+    writeFileSync(join(dir, '.claude-flow', 'neural', 'patterns.json'), JSON.stringify([
+      { type: 'action', confidence: 1.0, usageCount: 100 },
+      { type: 'action', confidence: 0.8, usageCount: 40 },
+    ]));
+    const d = collectDashboardData(dir);
+    assert.equal(d.neural.patterns, 2);
+    assert.ok(Math.abs(d.neural.avgConfidence - 0.9) < 1e-9);
+    assert.equal(d.neural.totalUses, 140);
+
+    const html = renderDashboardHtml(d);
+    assert.ok(html.includes('neural patterns') && html.includes('>2<'), 'neural count rendered');
+    assert.ok(html.includes('90%'), 'avg confidence rendered');
+    assert.ok(html.includes('>140<'), 'total uses rendered');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('serve mode: loopback server serves page / fragment / data, and 404s', async () => {
   const dir = seed();
   const server = createDashboardServer(dir);

@@ -108,6 +108,16 @@ export function collectDashboardData(dir, { now = Date.now() } = {}) {
   data.router = readRouterStats(dir);
   data.swarmActivity = readJson(join(dir, '.claude-flow', 'metrics', 'swarm-activity.json'));
 
+  // neural patterns — the ReasoningBank/cognitive-pattern store that grows with
+  // `ruflo neural train` (a plain file, no shell-out needed).
+  const np = readJson(join(dir, '.claude-flow', 'neural', 'patterns.json'));
+  const patterns = Array.isArray(np) ? np : (np?.patterns ?? []);
+  data.neural = patterns.length ? {
+    patterns: patterns.length,
+    avgConfidence: patterns.reduce((s, p) => s + (p.confidence ?? 0), 0) / patterns.length,
+    totalUses: patterns.reduce((s, p) => s + (p.usageCount ?? 0), 0),
+  } : null;
+
   // hive
   const hive = readJson(join(dir, '.claude-flow', 'hive-mind', 'state.json'));
   const hiveSessDir = join(dir, '.hive-mind', 'sessions');
@@ -224,26 +234,40 @@ export function renderBody(data) {
   const patTotal = (pat.shortTerm ?? 0) + (pat.longTerm ?? 0);
   const pct = (v) => (typeof v === 'number' ? `${(v * (v <= 1 ? 100 : 1)).toFixed(0)}%` : null);
   const r = data.router;
-  // Lead with the LIVE Q-Learning router signal (updateCount / qTable / epsilon
-  // decay / avgTDError all move as it learns); learning.json fields fill in.
-  const stats = r ? [
+  const nu = data.neural;
+  const minis = (rows) => rows
+    .filter(([, v]) => v != null && v !== '' && typeof v !== 'object')
+    .map(([k, v]) => `<div class="mini"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join('');
+  // The two live learning subsystems: the Q-Learning router (route feedback →
+  // updateCount/qTable/epsilon-decay/TD-error) and neural pattern training
+  // (neural train → ReasoningBank patterns/confidence/uses).
+  const routerStats = r ? minis([
     ['Q-updates', r.updateCount || null],
     ['Q-table', r.qTableSize || null],
     ['exploration ε', typeof r.epsilon === 'number' ? r.epsilon.toFixed(2) : null],
     ['TD-error ↓', typeof r.avgTDError === 'number' ? r.avgTDError.toFixed(2) : null],
     ['experiences', r.totalExperiences || null],
-  ] : [
-    ['patterns', patTotal || null],
-    ['pattern quality', pat.quality != null ? pct(pat.quality) : null],
-    ['routing acc.', pct(learn.routing?.accuracy ?? learn.routingAccuracy)],
-    ['sessions', learn.sessions?.total ?? null],
-    ['pending insights', data.memory.pendingInsights || null],
-  ];
-  const learnStats = stats
-    .filter(([, v]) => v != null && v !== '' && typeof v !== 'object')
-    .map(([k, v]) => `<div class="mini"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join('')
-    + (r ? `<p class="muted" style="margin:8px 0 0">Q-Learning router · exploration decays as it learns · lower TD-error = converging${r.ts ? ` · updated ${esc(r.ts.slice(11, 19))}` : ''}</p>` : '')
-    || '<p class="muted">no learning metrics yet — drive routing with <code>ruflo route feedback</code></p>';
+  ]) : '';
+  const neuralStats = nu ? minis([
+    ['neural patterns', nu.patterns || null],
+    ['avg confidence', typeof nu.avgConfidence === 'number' ? `${(nu.avgConfidence * 100).toFixed(0)}%` : null],
+    ['pattern uses', nu.totalUses || null],
+  ]) : '';
+  let learnStats;
+  if (r || nu) {
+    learnStats =
+      (r ? `<h3 class="muted" style="font-size:12px;margin:0 0 6px">Q-Learning router</h3>${routerStats}` : '')
+      + (nu ? `<h3 class="muted" style="font-size:12px;margin:${r ? '14' : '0'}px 0 6px">neural patterns</h3>${neuralStats}` : '')
+      + `<p class="muted" style="margin:10px 0 0">exploration ε + TD-error fall as routing converges; neural patterns grow with <code>ruflo neural train</code>${r?.ts ? ` · updated ${esc(r.ts.slice(11, 19))}` : ''}</p>`;
+  } else {
+    learnStats = minis([
+      ['patterns', patTotal || null],
+      ['pattern quality', pat.quality != null ? pct(pat.quality) : null],
+      ['routing acc.', pct(learn.routing?.accuracy ?? learn.routingAccuracy)],
+      ['sessions', learn.sessions?.total ?? null],
+      ['pending insights', data.memory.pendingInsights || null],
+    ]) || '<p class="muted">no learning metrics yet — drive it with <code>ruflo route feedback</code> / <code>neural train</code></p>';
+  }
 
   return `
   <div class="cards">${overview}</div>
