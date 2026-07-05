@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/smashkat12/kiro-flow/schemas/kiro-mcp.schema.json",
+  "title": "Kiro MCP configuration (workspace mcp.json / .kiro/settings/mcp.json)",
+  "description": "Hand-built from kiro.dev/docs/cli/mcp/configuration (July 2026).",
+  "type": "object",
+  "required": ["mcpServers"],
+  "additionalProperties": true,
+  "properties": {
+    "mcpServers": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["command"],
+        "additionalProperties": true,
+        "properties": {
+          "command": { "type": "string", "minLength": 1 },
+          "args": { "type": "array", "items": { "type": "string" } },
+          "env": { "type": "object", "additionalProperties": { "type": "string" } },
+          "timeout": { "type": "integer", "minimum": 0 },
+          "disabled": { "type": "boolean" },
+          "autoApprove": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

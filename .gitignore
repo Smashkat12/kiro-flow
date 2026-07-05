@@ -1,0 +1,9 @@
+node_modules/
+reference/ruflo/
+test-workspace/
+.swarm/
+.claude-flow/
+*.log
+.DS_Store
+dist/
+coverage/
