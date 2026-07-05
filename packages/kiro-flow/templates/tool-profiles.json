@@ -1,0 +1,24 @@
+{
+  "$comment": "Model-visible tool budgets per agent role. Values are category prefixes from dossiers/tool-inventory.json (350 tools / 35 categories). Used by the M2 converter to build per-agent allowedTools, and by the mcp-proxy filter if Kiro doesn't trim tool lists per agent.",
+  "core": {
+    "description": "Default orchestrator profile (~75 tools)",
+    "categories": ["memory", "swarm", "agent", "task", "session", "coordination", "hive-mind", "progress", "config"]
+  },
+  "worker": {
+    "description": "Headless background worker (~35 tools)",
+    "categories": ["memory", "task", "progress", "session"],
+    "extraTools": ["hooks_pre-task", "hooks_post-task", "hooks_notify"]
+  },
+  "researcher": {
+    "description": "Research/analysis agents (~45 tools)",
+    "categories": ["memory", "embeddings", "analyze", "guidance"]
+  },
+  "neural": {
+    "description": "Learning/training agents (~40 tools)",
+    "categories": ["memory", "neural", "guidance", "agentdb"]
+  },
+  "full": {
+    "description": "Everything (350 tools) — debugging only, will strain context",
+    "categories": ["*"]
+  }
+}
