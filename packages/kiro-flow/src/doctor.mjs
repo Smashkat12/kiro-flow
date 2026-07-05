@@ -23,6 +23,29 @@ function tryExec(cmd, args, timeout = 15_000) {
   }
 }
 
+/** Parse `kiro-cli chat --list-models` output into the set of available model ids. */
+export function parseModels(out) {
+  const ids = new Set();
+  for (const line of out.split('\n')) {
+    const m = /^\s*\*?\s*([a-z0-9][a-z0-9.-]*)\s+[\d.]+x\b/.exec(line);
+    if (m) ids.add(m[1]);
+  }
+  return ids;
+}
+
+/** kf-*.json agents in a dir whose `model` field pins a concrete id (not auto). */
+function pinnedModels(agentsDir) {
+  const byModel = new Map(); // id -> [agent name]
+  if (!existsSync(agentsDir)) return byModel;
+  for (const f of readdirSync(agentsDir).filter((n) => n.startsWith('kf-') && n.endsWith('.json'))) {
+    try {
+      const a = JSON.parse(readFileSync(join(agentsDir, f), 'utf8'));
+      if (a.model && a.model !== 'auto') (byModel.get(a.model) ?? byModel.set(a.model, []).get(a.model)).push(a.name ?? f);
+    } catch { /* covered by the agents check */ }
+  }
+  return byModel;
+}
+
 function readMcpConfig(dir) {
   for (const p of [join(dir, 'mcp.json'), join(dir, '.kiro', 'settings', 'mcp.json')]) {
     if (!existsSync(p)) continue;
@@ -152,6 +175,25 @@ export async function runDoctor({ dir, checkMcp = true }) {
       : broken ? fail(`${broken}/${files.length} agent files unparsable/invalid`) : ok(`${files.length} agents`));
   } else {
     add('agents', 'converted kf-* agents', fail('.kiro/agents missing — run kiro-flow init'));
+  }
+
+  // model routing (M11 #3): every pinned model must exist in this Kiro's list
+  const pinned = pinnedModels(agentsDir);
+  if (pinned.size === 0) {
+    add('models', 'agent model routing', skip('no agents pin a model — all inherit session/auto'));
+  } else if (!kiro.out) {
+    add('models', 'agent model routing', warn(`${pinned.size} model(s) pinned but kiro-cli missing — cannot verify availability`));
+  } else {
+    const models = tryExec('kiro-cli', ['chat', '--list-models']);
+    if (models.out === undefined) {
+      add('models', 'agent model routing', skip('kiro-cli chat --list-models unavailable on this version'));
+    } else {
+      const avail = parseModels(models.out);
+      const bad = [...pinned].filter(([id]) => !avail.has(id));
+      add('models', 'agent model routing', bad.length === 0
+        ? ok(`${pinned.size} model(s) pinned, all offered by kiro-cli`)
+        : warn(`${bad.map(([id, ags]) => `${id} (${ags.length} agent${ags.length > 1 ? 's' : ''})`).join('; ')} not in kiro-cli --list-models — edit ${join('.kiro', 'kiro-flow', 'model-map.json')} and rerun kiro-flow init`));
+    }
   }
 
   // hook plumbing: agents reference the adapter; adapter delegates to ruflo's helpers

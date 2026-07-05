@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { parseFrontmatter, parseToolList } from '../src/convert/frontmatter.mjs';
-import { mapToolName } from '../src/convert/tool-map.mjs';
+import { mapToolName, NATIVE_TOOLS } from '../src/convert/tool-map.mjs';
 import { convertAgents, expandProfile } from '../src/convert/agents.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -123,9 +123,12 @@ test('corpus: invariants — prompts, tool refs, allowlist safety', { skip: !has
     assert.equal(json.prompt, `file://./prompts/${json.name}.md`);
     assert.ok(promptBody.trim().length > 0, `${json.name}: empty prompt body`);
     assert.ok(json.tools.includes('read') && json.tools.includes('write') && json.tools.includes('shell'));
-    // allowedTools must never auto-approve write, shell, or foreign MCP servers
+    // allowedTools may pre-trust `read`, the safe native tools, and claude-flow
+    // MCP tools — but never write, shell, or a foreign MCP server.
     for (const t of json.allowedTools) {
-      assert.ok(t === 'read' || t.startsWith('@claude-flow/'), `${json.name}: unsafe allowedTools entry ${t}`);
+      assert.ok(t === 'read' || NATIVE_TOOLS.includes(t) || t.startsWith('@claude-flow/'), `${json.name}: unsafe allowedTools entry ${t}`);
+      assert.ok(t !== 'write' && t !== 'shell', `${json.name}: ${t} must not be pre-trusted`);
+      assert.ok(!(t.startsWith('@') && !t.startsWith('@claude-flow/')), `${json.name}: foreign MCP ${t} pre-trusted`);
     }
     // every allowed tool is also advertised
     for (const t of json.allowedTools) assert.ok(json.tools.includes(t), `${json.name}: ${t} allowed but not in tools`);

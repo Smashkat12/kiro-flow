@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { parseFrontmatter, parseToolList } from './frontmatter.mjs';
 import {
   CATEGORY_PROFILE, NAME_PROFILE, VERIFY_AT_WORK, mapToolName, selectCoreAgents,
+  NATIVE_TOOLS, nativeToolsFor, modelFor, DEFAULT_MODEL_MAP,
 } from './tool-map.mjs';
 
 const pkgRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
@@ -90,10 +91,14 @@ function profileFor(name, category) {
   return NAME_PROFILE[name] ?? CATEGORY_PROFILE[category] ?? 'worker';
 }
 
-/** Order: built-ins, subagent, @claude-flow/* sorted, other @server/* sorted. */
+/** Order: base built-ins, native tools, subagent/delegate, @claude-flow/* sorted, other @server/* sorted. */
 function sortToolRefs(refs) {
   const rank = (r) =>
-    BASE_BUILTINS.includes(r) ? 0 : r === 'subagent' ? 1 : r.startsWith('@claude-flow/') ? 2 : 3;
+    BASE_BUILTINS.includes(r) ? 0
+    : NATIVE_TOOLS.includes(r) ? 1
+    : (r === 'subagent' || r === 'delegate') ? 2
+    : r.startsWith('@claude-flow/') ? 3
+    : 4;
   return [...new Set(refs)].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 }
 
@@ -132,8 +137,11 @@ export function buildAgent({ name, attrs, body, category }, ctx) {
   }
 
   const cfRefs = [...cfTools].sort().map((t) => `@claude-flow/${t}`);
-  const tools = sortToolRefs([...BASE_BUILTINS, ...extraRefs, ...cfRefs]);
-  const allowedTools = ['read', ...cfRefs];
+  const nativeTools = nativeToolsFor(profileKey);              // M11 #2
+  const tools = sortToolRefs([...BASE_BUILTINS, ...nativeTools, ...extraRefs, ...cfRefs]);
+  // native tools are all read-only / side-effect-free → safe to pre-trust
+  const allowedTools = ['read', ...nativeTools, ...cfRefs];
+  const model = modelFor(name, profileKey, ctx.modelMap);     // M11 #3
 
   const description = (attrs.description ?? '').replace(/\s+/g, ' ').trim() || name;
   const json = {
@@ -141,6 +149,7 @@ export function buildAgent({ name, attrs, body, category }, ctx) {
     name: kfName,
     description,
     prompt: inlinePrompts ? body : `file://./prompts/${kfName}.md`,
+    ...(model ? { model } : {}),
     tools,
     allowedTools,
     ...(ctx.hooks ? { hooks: buildKfHooks() } : {}),
@@ -167,6 +176,7 @@ export function convertAgents(opts) {
     inlinePrompts = false,
     write = true,
     hooks = true,
+    modelMap = DEFAULT_MODEL_MAP,
   } = opts;
 
   const liveCfTools = new Set(JSON.parse(readFileSync(toolsDataPath, 'utf8')));
@@ -223,7 +233,7 @@ export function convertAgents(opts) {
   }
 
   // ── build + emit ──
-  const ctx = { liveCfTools, profiles, inlinePrompts, hooks, report, profileCache: new Map() };
+  const ctx = { liveCfTools, profiles, inlinePrompts, hooks, modelMap, report, profileCache: new Map() };
   const coreSet = new Set(selectCoreAgents([...byName.keys()]));
   const manifest = [];
   const agents = [];

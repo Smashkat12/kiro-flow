@@ -4,7 +4,9 @@
  *   1. `npx ruflo init --yes --no-global` + `init upgrade --add-missing`
  *      (skipped if already initialized; --no-global keeps ~/.claude/CLAUDE.md
  *      untouched; the upgrade pass pulls the full bundled agent library)
- *   2. convert .claude/agents → .kiro/agents (M2 converter)
+ *   2. resolve the model-routing map (.kiro/kiro-flow/model-map.json, M11 #3),
+ *      then convert .claude/agents → .kiro/agents (M2 converter) with native
+ *      tool budgets + per-role model routing baked into each agent
  *   3. register the MCP server: workspace mcp.json (CLI) + .kiro/settings/
  *      mcp.json (IDE), server key `claude-flow`, merged non-destructively
  *   4. steering file .kiro/steering/ruflo.md
@@ -27,7 +29,9 @@ import {
   buildKfHooks, convertAgents, expandProfile,
   DEFAULT_PROFILES, DEFAULT_TOOLS_DATA, HOOK_ADAPTER_REL,
 } from './convert/agents.mjs';
-import { CORE_AGENT_PREFERENCE, CORE_TARGET } from './convert/tool-map.mjs';
+import {
+  CORE_AGENT_PREFERENCE, CORE_TARGET, DEFAULT_MODEL_MAP, nativeToolsFor,
+} from './convert/tool-map.mjs';
 import { syncBinShim } from './daemon.mjs';
 
 const pkgRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -58,16 +62,36 @@ function mergeMcpJson(path, serverBlock) {
   return writeIfChanged(path, JSON.stringify(merged, null, 2) + '\n');
 }
 
+/** Path of the workspace model-routing override file (M11 #3). */
+export const MODEL_MAP_REL = join('.kiro', 'kiro-flow', 'model-map.json');
+
+/**
+ * Resolve the tier→model-id map for a workspace: the committed default merged
+ * with any workspace override at `.kiro/kiro-flow/model-map.json`. The override
+ * is the single file to edit when the employer's Kiro exposes different model
+ * IDs than the home free tier (`kiro-flow doctor` flags a pinned id that
+ * `kiro-cli chat --list-models` doesn't offer).
+ */
+export function resolveModelMap(dir) {
+  const p = join(dir, MODEL_MAP_REL);
+  if (existsSync(p)) {
+    try { return { ...DEFAULT_MODEL_MAP, ...JSON.parse(readFileSync(p, 'utf8')) }; }
+    catch { /* malformed → fall back to default */ }
+  }
+  return DEFAULT_MODEL_MAP;
+}
+
 /**
  * @param {string[]} [coreKfNames] the kf-* agents to register with the
  * subagent tool — pass the manifest's core selection so the orchestrator only
  * references agents that actually exist in this workspace. Falls back to the
  * first CORE_TARGET preference names when no manifest is available.
  */
-export function buildOrchestratorAgent(coreKfNames) {
+export function buildOrchestratorAgent(coreKfNames, model = DEFAULT_MODEL_MAP.strong) {
   const liveCfTools = new Set(JSON.parse(readFileSync(DEFAULT_TOOLS_DATA, 'utf8')));
   const profiles = JSON.parse(readFileSync(DEFAULT_PROFILES, 'utf8'));
   const cfRefs = expandProfile(profiles.core, liveCfTools).map((t) => `@claude-flow/${t}`);
+  const native = nativeToolsFor('core');
   const kfCore = coreKfNames?.length
     ? [...coreKfNames].sort()
     : CORE_AGENT_PREFERENCE.slice(0, CORE_TARGET).map((n) => `kf-${n}`);
@@ -76,8 +100,9 @@ export function buildOrchestratorAgent(coreKfNames) {
     name: 'kf-orchestrator',
     description: 'ruflo orchestrator for Kiro — coordinates the kf-* agent library via subagent fan-out and claude-flow swarm/memory tools',
     prompt: 'file://./prompts/kf-orchestrator.md',
-    tools: ['read', 'write', 'shell', 'subagent', ...cfRefs],
-    allowedTools: ['read', ...cfRefs],
+    ...(model ? { model } : {}),
+    tools: ['read', 'write', 'shell', ...native, 'subagent', ...cfRefs],
+    allowedTools: ['read', ...native, ...cfRefs],
     toolsSettings: {
       subagent: { availableAgents: kfCore, trustedAgents: kfCore },
     },
@@ -91,7 +116,7 @@ export function buildOrchestratorAgent(coreKfNames) {
  * orchestrator, but with the queen persona and the hive/consensus toolset;
  * `kiro-flow hive-mind spawn` launches kiro-cli chat with this agent.
  */
-export function buildQueenAgent(coreKfNames) {
+export function buildQueenAgent(coreKfNames, model = DEFAULT_MODEL_MAP.strong) {
   const liveCfTools = new Set(JSON.parse(readFileSync(DEFAULT_TOOLS_DATA, 'utf8')));
   const profiles = JSON.parse(readFileSync(DEFAULT_PROFILES, 'utf8'));
   const cfNames = expandProfile(profiles.core, liveCfTools);
@@ -100,6 +125,7 @@ export function buildQueenAgent(coreKfNames) {
     if (liveCfTools.has(extra) && !cfNames.includes(extra)) cfNames.push(extra);
   }
   const cfRefs = cfNames.sort().map((t) => `@claude-flow/${t}`);
+  const native = nativeToolsFor('core');
   const kfCore = coreKfNames?.length
     ? [...coreKfNames].sort()
     : CORE_AGENT_PREFERENCE.slice(0, CORE_TARGET).map((n) => `kf-${n}`);
@@ -108,8 +134,9 @@ export function buildQueenAgent(coreKfNames) {
     name: 'kf-queen',
     description: 'ruflo hive-mind queen for Kiro — consensus-led swarm coordination via claude-flow hive tools, execution via subagent fan-out',
     prompt: 'file://./prompts/kf-queen.md',
-    tools: ['read', 'write', 'shell', 'subagent', ...cfRefs],
-    allowedTools: ['read', ...cfRefs],
+    ...(model ? { model } : {}),
+    tools: ['read', 'write', 'shell', ...native, 'subagent', ...cfRefs],
+    allowedTools: ['read', ...native, ...cfRefs],
     toolsSettings: {
       subagent: { availableAgents: kfCore, trustedAgents: kfCore },
     },
@@ -123,19 +150,21 @@ export function buildQueenAgent(coreKfNames) {
  * web_fetch + the researcher tool profile; produces cited reports and
  * persists findings via memory_store.
  */
-export function buildDeepResearcherAgent() {
+export function buildDeepResearcherAgent(model = DEFAULT_MODEL_MAP.strong) {
   const liveCfTools = new Set(JSON.parse(readFileSync(DEFAULT_TOOLS_DATA, 'utf8')));
   const profiles = JSON.parse(readFileSync(DEFAULT_PROFILES, 'utf8'));
   const cfNames = expandProfile(profiles.researcher, liveCfTools);
   if (liveCfTools.has('memory_store') && !cfNames.includes('memory_store')) cfNames.push('memory_store');
   const cfRefs = cfNames.sort().map((t) => `@claude-flow/${t}`);
+  const native = nativeToolsFor('researcher');
   return {
     $schema: 'https://github.com/smashkat12/kiro-flow/schemas/kiro-agent.schema.json',
     name: 'kf-deep-researcher',
     description: 'ruflo deep-research for Kiro — multi-angle web research with verified citations; findings persisted to claude-flow memory',
     prompt: 'file://./prompts/kf-deep-researcher.md',
-    tools: ['read', 'write', 'web_search', 'web_fetch', ...cfRefs],
-    allowedTools: ['read', 'web_search', 'web_fetch', ...cfRefs],
+    ...(model ? { model } : {}),
+    tools: ['read', 'write', ...native, 'web_search', 'web_fetch', ...cfRefs],
+    allowedTools: ['read', ...native, 'web_search', 'web_fetch', ...cfRefs],
     hooks: buildKfHooks(),
     includeMcpJson: true,
   };
@@ -210,11 +239,16 @@ export function initWorkspace({ dir, force = false, skipRufloInit = false, clean
     step('ruflo init', 'done', `${RUFLO_SPEC} init --yes --no-global + upgrade --add-missing (full agent library)`);
   }
 
+  // 2a. model routing map (M11 #3) — one editable file for the whole workspace;
+  // resolved before conversion so every agent is routed consistently.
+  const modelMap = resolveModelMap(dir);
+  step(MODEL_MAP_REL, writeIfChanged(join(dir, MODEL_MAP_REL), JSON.stringify(modelMap, null, 2) + '\n'));
+
   // 2. convert agents
   const agentSource = join(dir, '.claude', 'agents');
   let coreKfNames;
   if (existsSync(agentSource)) {
-    const { report, manifest } = convertAgents({ source: agentSource, out: join(dir, '.kiro', 'agents') });
+    const { report, manifest } = convertAgents({ source: agentSource, out: join(dir, '.kiro', 'agents'), modelMap });
     coreKfNames = manifest.filter((a) => a.core).map((a) => a.name);
     step('convert agents', 'done', `${report.counts.emitted} agents (${report.counts.skipped} skipped, ${report.counts.deduped} deduped; core: ${coreKfNames.length})`);
   } else {
@@ -249,15 +283,17 @@ export function initWorkspace({ dir, force = false, skipRufloInit = false, clean
   step('node_modules/.bin/claude → shim', 'ok');
 
   // 7. kf-judge — installed GLOBALLY (~/.kiro/agents): the fable/judge plane
-  // spawns in an empty temp cwd where workspace agents are invisible (M8)
-  const judgeSrc = readFileSync(join(pkgRoot, 'templates', 'agents', 'kf-judge.json'), 'utf8');
-  step('~/.kiro/agents/kf-judge.json (global)', writeIfChanged(join(homedir(), '.kiro', 'agents', 'kf-judge.json'), judgeSrc));
+  // spawns in an empty temp cwd where workspace agents are invisible (M8). The
+  // judge is a verifier → strong tier, routed through the same model map.
+  const judge = JSON.parse(readFileSync(join(pkgRoot, 'templates', 'agents', 'kf-judge.json'), 'utf8'));
+  if (modelMap.strong) judge.model = modelMap.strong; else delete judge.model;
+  step('~/.kiro/agents/kf-judge.json (global)', writeIfChanged(join(homedir(), '.kiro', 'agents', 'kf-judge.json'), JSON.stringify(judge, null, 2) + '\n'));
 
   // 8. orchestrator + queen agents
   for (const [name, agent] of [
-    ['kf-orchestrator', buildOrchestratorAgent(coreKfNames)],
-    ['kf-queen', buildQueenAgent(coreKfNames)],
-    ['kf-deep-researcher', buildDeepResearcherAgent()],
+    ['kf-orchestrator', buildOrchestratorAgent(coreKfNames, modelMap.strong)],
+    ['kf-queen', buildQueenAgent(coreKfNames, modelMap.strong)],
+    ['kf-deep-researcher', buildDeepResearcherAgent(modelMap.strong)],
   ]) {
     step(`.kiro/agents/${name}.json`, writeIfChanged(
       join(dir, '.kiro', 'agents', `${name}.json`),

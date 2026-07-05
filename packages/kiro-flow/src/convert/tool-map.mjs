@@ -75,6 +75,70 @@ export const NAME_PROFILE = {
 };
 
 /**
+ * M11 #2 — Kiro-native (non-MCP) tools granted per role, on top of the
+ * read/write/shell base. Every entry is read-only or side-effect-free (native
+ * search, task list, extended reasoning, knowledge-base read), so all of them
+ * are safe to pre-trust in `allowedTools` — which also removes their
+ * confirmation prompt. Native fan-out (`subagent`/`delegate`) is wired by the
+ * delegation-graph step (#1), not here. Names verified against the
+ * `agent_config.json.example` kiro-cli ships: read, write, shell, aws, report,
+ * introspect, knowledge, thinking, todo, delegate, grep, glob.
+ */
+export const NATIVE_TOOLS_BY_PROFILE = {
+  core: ['glob', 'grep', 'thinking', 'todo'],
+  researcher: ['glob', 'grep', 'knowledge', 'thinking', 'todo'],
+  neural: ['glob', 'grep', 'knowledge', 'thinking', 'todo'],
+  worker: ['glob', 'grep', 'todo'],
+  github: ['glob', 'grep', 'todo'],
+  perf: ['glob', 'grep', 'thinking', 'todo'],
+  full: ['glob', 'grep', 'introspect', 'knowledge', 'report', 'thinking', 'todo'],
+};
+
+/** Union of every native tool we emit — for tool ordering + the allowedTools safety invariant. */
+export const NATIVE_TOOLS = [...new Set(Object.values(NATIVE_TOOLS_BY_PROFILE).flat())].sort();
+
+/** Native productivity tools for a profile (falls back to the lean worker set). */
+export function nativeToolsFor(profileKey) {
+  return NATIVE_TOOLS_BY_PROFILE[profileKey] ?? NATIVE_TOOLS_BY_PROFILE.worker;
+}
+
+/**
+ * M11 #3 — per-agent model routing. Kiro multiplexes several models
+ * (`kiro-cli chat --list-models`); routing heavy roles to a stronger model and
+ * mechanical ones to a cheaper/faster model is a real quality/cost lever.
+ * Emitted as tiers resolved through a model map so the employer's Bedrock-backed
+ * Kiro (which may expose different IDs than the home free tier) needs at most
+ * one file edited. `balanced` → null means "omit the field" → the agent
+ * inherits the session / `auto` model (Kiro picks per task).
+ */
+export const MODEL_TIER_BY_PROFILE = {
+  core: 'strong',
+  researcher: 'strong',
+  neural: 'strong',
+  worker: 'balanced',
+  github: 'balanced',
+  perf: 'balanced',
+};
+
+/** Role-name tier overrides (kf-less name) — win over the profile tier. Extension point. */
+export const MODEL_TIER_BY_NAME = {
+  reviewer: 'strong',
+};
+
+/** Default tier → concrete model id. Verified on kiro-cli 2.10.0 home (`chat --list-models`). */
+export const DEFAULT_MODEL_MAP = {
+  strong: 'claude-sonnet-4.5',
+  balanced: null, // omit the field → inherit the session / `auto` model
+  fast: 'claude-haiku-4.5',
+};
+
+/** Resolve the concrete model id for an agent, or null to leave the field off. */
+export function modelFor(name, profileKey, modelMap = DEFAULT_MODEL_MAP) {
+  const tier = MODEL_TIER_BY_NAME[name] ?? MODEL_TIER_BY_PROFILE[profileKey] ?? 'balanced';
+  return modelMap[tier] ?? null;
+}
+
+/**
  * Preference-ordered candidates for the ~12 agents the orchestrator registers
  * as available/trusted; all others stay dormant until `kiro-flow agents enable`.
  * The selection is computed against the corpus that actually converted —
