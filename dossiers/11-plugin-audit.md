@@ -19,12 +19,36 @@ core MCP we run; ~8 more are agent/command/skill packs convertible on demand;
   (`ruflo-core`) registers the one shared 300+/350-tool server that folds most
   plugin tools into it.
 
-**Caveat:** "IN-CORE N" means the tools are *present in the registered set*.
-Live end-to-end invocation was verified in the M1/parity/M-series work for
-memory/agentdb/ruvector/embeddings/neural/hive/swarm/testgen/analyze; the other
-in-core counts (browser, metaharness, daa, aidefence, workflow, ruvllm,
-federation, observability) are asserted from the served tool list, not each
-individually driven.
+**Caveat (mostly closed):** "IN-CORE N" means the tools are *present in the
+registered set*. Live end-to-end invocation was verified in the M1/parity/
+M-series work for memory/agentdb/ruvector/embeddings/neural/hive/swarm/testgen/
+analyze, and the parity-hardening probe (`scripts/mcp-parity-probe.mjs`, below)
+now **drives browser, metaharness, daa, aidefence, workflow, federation, and
+observability(metrics) live** — all return real handler output. Only `ruvllm`
+remains undriven (N-A: local-LLM serving, moot when Kiro is the model provider).
+
+## Parity-hardening probe — the asserted subsystems, driven live
+
+`scripts/mcp-parity-probe.mjs` spins up the real `npx ruflo mcp start` server,
+calls a representative tool from each previously-asserted subsystem with
+schema-derived args, and classifies each response **real** (structured output),
+**wired** (a domain error/`success:false` — still a real handler that validated
+input), or **stub** (empty/echo/not-implemented). A subsystem passes only if no
+probed tool is stub/fail. Result (kiro-cli 2.10.0, ruflo 3.0.0, 350 tools):
+
+| subsystem | probed tools | verdict |
+|---|---|---|
+| aidefence | has_pii / is_safe / scan | **real** — `has_pii(PII)→hasPII:true`, `is_safe(injection)→safe:false,promptSafe:false`, `scan(PII)→piiFound:true` (semantic, not just wired) |
+| observability(metrics) | system_metrics / performance_metrics / hooks_metrics | **real** — live `_real:true` cpu/mem + `_dataSource: intelligence-stats` |
+| daa | daa_learning_status / daa_agent_create | **real** — created an agent, `learning_status.total` incremented across runs (real state) |
+| workflow | workflow_list / workflow_create | **real** — created a workflow, it appears in the subsequent list |
+| metaharness | metaharness_audit_list / metaharness_threat_model | **real** — audit namespace + generated threat model (schema 1) |
+| federation | federation_bbs_register | **real handler, honestly degraded** — `success:true, degraded:true, reason:"agentbbs-not-found"` on a single machine (needs the agent-BBS peer service for full cross-machine; work-side item) |
+| browser | browser_snapshot | **real** — returned an actual a11y snapshot (`"- document"`) of a blank page; no external browser download required |
+
+Classifier + arg-builder are unit-tested (`test/parity-probe.test.mjs`, 6
+tests); the live run stays out of the default suite (live-MCP contention hangs
+`node --test test/`) — run `node scripts/mcp-parity-probe.mjs` by hand.
 
 ## The matrix
 

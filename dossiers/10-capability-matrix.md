@@ -88,12 +88,16 @@ injection).
 
 ## Verification ledger (all local, kiro-cli 2.10.0)
 
-- 70+ automated tests green across M2–M9 suites
+- 115+ automated tests green across M2–M12 suites
 - Live: MCP 350-tool handshake · agent validation via real `kiro-cli agent
   validate` · hook safety block (`rm -rf /` stopped by ruflo's own rule) ·
   headless worker sweep · claude-less work-laptop simulation · hive session
   mutating shared state · A→B memory recall · judge verdict array · cited
-  research report · clean-machine install (below)
+  research report · clean-machine install (below) · port-tier plugin agent +
+  skills + command live on kiro-cli (M12) · **parity-hardening probe** driving
+  the 7 previously-asserted subsystems live (browser/metaharness/daa/aidefence/
+  metrics/workflow/federation — all real handler output; `scripts/
+  mcp-parity-probe.mjs`, dossier 11)
 
 ## Work-side checklist (final, consolidated)
 
