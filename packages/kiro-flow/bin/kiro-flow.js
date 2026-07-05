@@ -13,6 +13,7 @@ import { hiveSpawnCommand } from '../src/hive.mjs';
 import { sessionListCommand, sessionResumeCommand, memoryRefreshCommand } from '../src/session.mjs';
 import { cmdCommand } from '../src/cmd.mjs';
 import { powerPackCommand } from '../src/power.mjs';
+import { skillsCommand } from '../src/convert/skills.mjs';
 
 const USAGE = `kiro-flow — ruflo on AWS Kiro
 
@@ -30,6 +31,8 @@ Usage:
   kiro-flow session list               Kiro chat sessions joined with hook bridge records
   kiro-flow session resume <id>        kiro-cli chat --resume-id <id> [--agent kf-…]
   kiro-flow memory refresh             rebuild the recall cache now (hooks do it detached)
+  kiro-flow skills <list|add|remove>   port ruflo skill playbooks to .kiro/skills (auto-loaded)
+                                       add: --core | <name…> | --all   remove: <name…> | --all
   kiro-flow power pack [--out <dir>]   assemble the team-distributable Kiro Power bundle
   kiro-flow clean-cc [--dir <dir>]     remove inert Claude-Code files (CLAUDE.md, .mcp.json, …)
   kiro-flow shim-path                  print the shim dir (for manual PATH injection)
@@ -206,6 +209,25 @@ if (cmd === 'convert' && sub === 'agents') {
 } else if (cmd === 'memory' && sub === 'refresh') {
   const { dir } = splitPassthrough(rest);
   process.exit(memoryRefreshCommand({ dir: resolve(dir) }));
+} else if (cmd === 'skills') {
+  const { values, positionals } = parseArgs({
+    args: rest,
+    options: {
+      dir: { type: 'string', default: '.' },
+      source: { type: 'string' },
+      core: { type: 'boolean', default: false },
+      all: { type: 'boolean', default: false },
+    },
+    allowPositionals: true,
+  });
+  process.exit(skillsCommand({
+    dir: resolve(values.dir),
+    sub,
+    ...(values.source ? { source: resolve(values.source) } : {}),
+    core: values.core,
+    all: values.all,
+    names: positionals,
+  }));
 } else if (cmd === 'power' && sub === 'pack') {
   const outIdx = rest.indexOf('--out');
   const out = outIdx >= 0 ? rest[outIdx + 1] : 'powers/kiro-flow';

@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { convertAgents } from '../src/convert/agents.mjs';
 import { parseModels } from '../src/doctor.mjs';
+import { Ajv2020 } from 'ajv/dist/2020.js';
 import {
   NATIVE_TOOLS, NATIVE_TOOLS_BY_PROFILE, nativeToolsFor,
   DEFAULT_MODEL_MAP, MODEL_TIER_BY_PROFILE, modelFor, isCoordinator,
@@ -18,6 +19,7 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CORPUS = join(here, '..', '..', '..', 'reference', 'ruflo', '.claude', 'agents');
+const SCHEMA = join(here, '..', '..', '..', 'schemas', 'kiro-agent.schema.json');
 const hasCorpus = existsSync(CORPUS);
 
 // ── #2 native tools: the set is safe (never write/shell/fan-out) ──
@@ -90,6 +92,18 @@ test('coordinators get a native subagent delegation roster; leaves do not', { sk
     assert.ok(!leaf.json.toolsSettings, 'kf-backend-dev should stay a leaf');
     assert.ok(!leaf.json.tools.includes('subagent'), 'leaf should not advertise subagent');
   }
+});
+
+// ── resources pass: schema correctness (steering + skills auto-load, so we
+//    don't emit per-agent resources; knowledgeBase is unsupported on the CLI) ──
+
+test('schema: resources accept file://|skill:// strings, reject bare paths and knowledgeBase objects', () => {
+  const ajv = new Ajv2020({ strict: false });
+  const validate = ajv.compile(JSON.parse(readFileSync(SCHEMA, 'utf8')));
+  const base = { name: 'kf-x', description: 'd', prompt: 'p', tools: ['read'], includeMcpJson: true };
+  assert.ok(validate({ ...base, resources: ['file://.kiro/steering/ruflo.md', 'skill://sparc-methodology'] }), 'file/skill strings should validate');
+  assert.ok(!validate({ ...base, resources: ['docs/steering.md'] }), 'bare path must be rejected (kiro-cli errors at runtime)');
+  assert.ok(!validate({ ...base, resources: [{ type: 'knowledgeBase', source: './x' }] }), 'knowledgeBase object must be rejected (unsupported on CLI 2.10.0)');
 });
 
 test('doctor parseModels: extracts ids from real --list-models output', () => {

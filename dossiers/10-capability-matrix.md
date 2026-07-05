@@ -63,7 +63,7 @@ as-is · **dropped** = no Kiro equivalent, documented.
 | Multi-provider | **documented** (different root) | ruflo's 7-provider API layer is unused on the Kiro plane — Kiro itself multiplexes models (claude/deepseek/minimax/glm/qwen via `--model`); shim maps `ANTHROPIC_MODEL`, `KIRO_FLOW_MODEL_MAP` overrides |
 | Deep research (RuFlow Research) | **rebuilt** | M9: no upstream skill exists; kf-deep-researcher on Kiro-native web_search/web_fetch; live cited report + memory_store verified |
 | 166 slash-commands | **ported** | M9: `kiro-flow cmd <id>` runner ($ARGUMENTS + kiroification); curated 20 verified; full catalogue in dossier 09 |
-| 34 skills | **documented** | no Kiro skills surface; methodologies reachable via `cmd`, steering, and agent personas (sparc/swarm skills overlap the command set) |
+| 34 skills | **ported** (opt-in) | M11 resources pass: Kiro DOES have a skills surface — `.kiro/skills/*/SKILL.md` auto-loads into every agent (verified via `/context show`). `kiro-flow skills add --core\|<name>\|--all` copies ruflo's 38 skills there; opt-in because all 38 = ~151k tokens always-on (curated core ~20k). `cmd`/steering/personas still cover the rest |
 | Powers / team distribution | **built** (IDE verify pending) | M10: `powers/kiro-flow` bundle + `power pack`; install.sh; clean-machine test |
 | Statusline, cost tracker | **dropped** | CC-transcript-dependent; no Kiro equivalent |
 | CC transcript import (auto-memory) | **dropped** | M7: no transcript tree on Kiro; capture flows via hooks + memory_store instead |
@@ -139,3 +139,49 @@ neural: enabled}`.
 **Verdict: full ruflo internals run on Kiro.** The MCP server is the real
 3.23 engine with agentdb + ruvector-HNSW + ONNX embeddings live, not a
 tool-name stub. Parity confirmed.
+
+## M11 — native-agent enrichment (post-M10, 2026-07-05)
+
+Making the converted agents genuinely *Kiro-native* rather than "ruflo agents
+that validate". All verified live on kiro-cli 2.10.0.
+
+- **#2 native tool budgets** — every kf-* agent gets Kiro-native read-only
+  tools per role (`grep`/`glob`/`todo`/`thinking`, +`knowledge` for
+  researcher/neural), all pre-trusted in `allowedTools`.
+- **#3 per-agent model routing** — core/researcher/neural + flagships →
+  `claude-sonnet-4.5`, the rest inherit `auto`; tiers resolved through an
+  overridable `.kiro/kiro-flow/model-map.json` (one file to edit for the
+  employer's Bedrock IDs). `doctor` warns on a pinned model absent from
+  `kiro-cli chat --list-models`.
+- **#1 native subagent delegation** — 14 coordinators (core profile AND a
+  coordinator/orchestrator/manager/queen name) emit `subagent` +
+  `toolsSettings.subagent.{availableAgents,trustedAgents}` = the workspace core
+  roster. **Empirically nailed down:** the config tool name `subagent` is what
+  enables the runtime `use_subagent` fan-out (commands ListAgents /
+  InvokeSubagents, ≤4 parallel) — `delegate` (listed in Kiro's own example
+  config) does NOT. A coordinator ran ListAgents and returned exactly its
+  roster; an off-roster workspace agent was excluded — so `availableAgents`
+  both enables and *scopes* fan-out.
+
+### Resources & skills — corrected model of Kiro's context surface
+
+`/tools schema` + `/context show` probing overturned two earlier assumptions:
+
+- **Kiro HAS a skills surface.** `skill://<name>` resolves to
+  `.kiro/skills/<name>/SKILL.md`, and Kiro **auto-loads every
+  `.kiro/skills/*/SKILL.md`** (and `~/.kiro/skills`) into *all* agents — no
+  per-agent wiring needed, the file's presence is enough. So skills are ported
+  via `kiro-flow skills` (copies ruflo's `.claude/skills/<name>` →
+  `.kiro/skills/`). Opt-in, not in `init`: all 38 ≈ 151k tokens always-on;
+  curated `--core` (sparc-methodology, swarm-orchestration, hooks-automation,
+  verification-quality) ≈ 20k.
+- **Steering already auto-loads too** via a default `.kiro/steering/**/*.md`
+  glob — so no `file://` steering resource is emitted (it would just
+  double-reference). Default CLI context = AmazonQ.md/AGENTS.md/README.md +
+  those two globs.
+- **`resources` entries must be `file://` or `skill://` strings** at chat
+  runtime (a bare path errors). **The `knowledgeBase` object form is REJECTED**
+  by kiro-cli 2.10.0 ("not valid under anyOf") — schema corrected; it is not a
+  CLI capability whatever the IDE may expose.
+
+Deferred (lower value): `toolAliases`, `keyboardShortcut`/`welcomeMessage`.

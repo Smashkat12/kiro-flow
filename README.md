@@ -45,7 +45,7 @@ Adapter, not fork. The published `ruflo` npm package's genuinely host-agnostic e
 
 The thin `kiro-flow` package adds what Kiro needs:
 
-1. **Converters** — 108 agent personas → `.kiro/agents/*.json`, commands/skills → `.kiro/skills/`, CLAUDE.md → steering
+1. **Converters** — 108 agent personas → `.kiro/agents/*.json` (native tool budgets, per-role model routing, subagent delegation rosters), CLAUDE.md → steering; `kiro-flow skills add` ports ruflo's skill playbooks → `.kiro/skills/` (auto-loaded, opt-in)
 2. **kiro-claude-shim** — a `claude`-compatible bin that redirects ruflo's headless worker spawns to `kiro-cli chat --no-interactive`
 3. **Hook adapter** — Kiro hook events (`agentSpawn`/`preToolUse`/`postToolUse`/`stop`/`userPromptSubmit`) → ruflo's hook handlers
 4. **`kiro-flow init` + one-line install.sh** — mirrors ruflo's installer for Kiro

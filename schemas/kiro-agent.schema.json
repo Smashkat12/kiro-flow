@@ -52,23 +52,11 @@
     },
     "resources": {
       "type": "array",
+      "description": "Extra context files. kiro-cli 2.10.0 REQUIRES each entry be a file:// or skill:// string at chat runtime (a bare path or other scheme errors; the knowledgeBase object form is rejected — 'not valid under anyOf' — so it is NOT supported on the CLI, whatever the IDE may do). file://<path|glob> loads matching files; skill://<name> resolves to .kiro/skills/<name>/SKILL.md (and ~/.kiro/skills). Note: every .kiro/skills/*/SKILL.md already auto-loads into all agents.",
       "items": {
-        "oneOf": [
-          { "type": "string", "description": "file:// or skill:// URI" },
-          {
-            "type": "object",
-            "required": ["type", "source"],
-            "additionalProperties": true,
-            "properties": {
-              "type": { "const": "knowledgeBase" },
-              "source": { "type": "string" },
-              "name": { "type": "string" },
-              "description": { "type": "string" },
-              "indexType": { "type": "string" },
-              "autoUpdate": { "type": "boolean" }
-            }
-          }
-        ]
+        "type": "string",
+        "pattern": "^(file|skill)://",
+        "description": "file://<path or glob> or skill://<name>"
       }
     },
     "hooks": {
