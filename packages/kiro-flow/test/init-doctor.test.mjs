@@ -126,6 +126,34 @@ test('init --exclude drops a category, persists exclude.json, and prunes prior e
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('init --plugins ports a plugin (agents+skills+commands), persists, replays, and reverts', () => {
+  const dir = makeFixtureWorkspace();
+  try {
+    initWorkspace({ dir, skipRufloInit: true, includePlugins: ['ruflo-ddd'] });
+
+    // agent converted, plugin skill installed, command namespaced + resolvable
+    assert.ok(existsSync(join(dir, '.kiro', 'agents', 'kf-domain-modeler.json')), 'plugin agent emitted');
+    assert.ok(existsSync(join(dir, '.kiro', 'skills', 'ddd-context', 'SKILL.md')), 'plugin skill installed');
+    assert.ok(existsSync(join(dir, '.claude', 'commands', 'ddd', 'ddd.md')), 'plugin command installed');
+    const enabled = JSON.parse(readFileSync(join(dir, '.kiro', 'kiro-flow', 'plugins.json'), 'utf8')).enabled;
+    assert.deepEqual(enabled, ['ruflo-ddd']);
+    // flagship deep-researcher survives (ruflo-goals owns that name, but it's not enabled here)
+    assert.ok(existsSync(join(dir, '.kiro', 'agents', 'kf-deep-researcher.json')), 'flagship intact');
+
+    // plain re-init replays the persisted enable → plugin agent stays
+    initWorkspace({ dir, skipRufloInit: true });
+    assert.ok(existsSync(join(dir, '.kiro', 'agents', 'kf-domain-modeler.json')), 'plugin persisted across re-init');
+
+    // disabling reconciles everything away
+    writeFileSync(join(dir, '.kiro', 'kiro-flow', 'plugins.json'), '{"enabled":[]}\n');
+    initWorkspace({ dir, skipRufloInit: true });
+    assert.ok(!existsSync(join(dir, '.kiro', 'agents', 'kf-domain-modeler.json')), 'plugin agent pruned');
+    assert.ok(!existsSync(join(dir, '.kiro', 'skills', 'ddd-context')), 'plugin skill removed');
+    assert.ok(!existsSync(join(dir, '.claude', 'commands', 'ddd')), 'plugin command removed');
+    assert.ok(existsSync(join(dir, '.kiro', 'agents', 'kf-deep-researcher.json')), 'flagship still intact');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('flagship agents (orchestrator/queen) route to the opus tier', () => {
   assert.equal(DEFAULT_MODEL_MAP.opus, 'claude-opus-4.8');
   assert.equal(buildOrchestratorAgent(['kf-coder']).model, DEFAULT_MODEL_MAP.opus);

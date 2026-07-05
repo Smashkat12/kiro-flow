@@ -129,6 +129,14 @@ kiro-flow init --exclude flow-nexus    # drops the 9 flow-nexus agents; persiste
                                        # every re-init. (0 flow-nexus MCP tools exist,
                                        # so nothing to remove there.)
 
+# Port-tier plugins (dossier 11) — vendored agent/command/skill packs that need
+# no engine. Enable the ones you'll use (persisted; replayed on every re-init):
+kiro-flow plugins list                 # 8 vendored, ● enabled / ○ available
+kiro-flow plugins add ddd security-audit adr   # e.g. DDD + security + ADRs
+#   → kf-domain-modeler / kf-security-auditor / kf-adr-architect agents,
+#     their skills into .kiro/skills, their /commands under .claude/commands.
+#   kiro-flow plugins remove --all   reverts cleanly.
+
 kiro-cli agent list                    # expect kf-orchestrator + the kf-* library
 kiro-cli chat --agent kf-orchestrator
 #   Prompt: "Fan out: have kf-planner draft a 3-step plan for X and store it in memory."

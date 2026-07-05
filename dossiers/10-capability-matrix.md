@@ -36,10 +36,14 @@ Upstream carries **37 plugins** with **56 dedicated plugin agents**
 (`plugins/*/agents/*.md`; largest: ruflo-agent 9, neural-trader/iot/goals/core
 4 each). The M2 converter ingests them unmodified — pointing it at the
 plugins tree emits 235 valid agents (56 dedicated + agent-shaped command/
-template files with frontmatter). Port path exists today:
-`kiro-flow convert agents --source <plugin-dir> --out .kiro/agents`.
-Not installed by default — the 73-agent base library is already at the edge
-of useful; pull plugin agents per need.
+template files with frontmatter). The **8 "port-tier" plugins** (agent/command/
+skill packs with no dedicated engine) are now **vendored + one-command
+enablable** — `kiro-flow plugins add <name>` (M12, dossier 11): persisted to
+`.kiro/kiro-flow/plugins.json`, replayed by init, agents merged into the same
+dedup pass. Not installed by default — the 73-agent base library is already at
+the edge of useful; enable plugins per need. (For raw ad-hoc conversion the
+low-level path still exists: `kiro-flow convert agents --source <dir> --out
+.kiro/agents`.)
 
 ## Final capability matrix
 

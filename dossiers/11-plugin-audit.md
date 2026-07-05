@@ -88,11 +88,51 @@ demand · **external**: needs a separate npm runtime we don't ship ·
 ## What this means
 
 The core MCP server kiro-flow runs is a genuine **superset** that already
-serves the tools behind roughly half the plugins. The "port" tier needs no new
-engine — just `kiro-flow convert agents --source plugins/<name>/agents`,
-`kiro-flow skills add`, and `kiro-flow cmd`. The only real *gaps* are the
+serves the tools behind roughly half the plugins. The only real *gaps* are the
 domain verticals (trading, IoT, market data, arena), which ride separate npm
 packages, and the handful that are structurally N-A on Kiro.
 
-**To port any "port"-tier plugin properly** (agents + its skills + verify its
-commands run): name it and it's a scoped, repeatable job.
+## The "port" tier is now shipped — `kiro-flow plugins` (M12)
+
+All 8 port-tier plugins are **vendored into the package**
+(`packages/kiro-flow/plugins/<name>/`, ~470 KB of agents/commands/skills) and
+enabled with one reproducible command. They are vendored because `ruflo init`
+does **not** install the plugins tree — ruflo pulls plugins from an IPFS
+registry (`ruflo plugins install`), which is unreliable-to-blocked on a
+governed work laptop. Shipping them in the package means zero network fetch at
+work.
+
+```bash
+kiro-flow plugins list                 # 8 vendored, ● enabled / ○ available
+kiro-flow plugins add ddd security-audit   # short or full (ruflo-…) names
+kiro-flow plugins remove --all             # revert cleanly
+```
+
+**How it works** (mirrors `init --exclude`): the enabled set persists to
+`.kiro/kiro-flow/plugins.json` and is **replayed by every `kiro-flow init`** —
+
+- **agents** convert in the *same* dedup pass as the base library (fed as
+  `extraSources`), so a plugin agent whose name collides with a base agent
+  (`goal-planner`, `deep-researcher`) dedups instead of duplicating, and each
+  plugin is mapped to the closest tool profile (ddd/adr→architecture,
+  docs→documentation, goals→goal, kg→data, security→analysis);
+- **skills** install to the auto-loaded `.kiro/skills/`;
+- **commands** land namespaced under `.claude/commands/<short>/` so
+  `kiro-flow cmd <name>` resolves them.
+
+Disabling reconciles all three back out. The three kiro-flow flagships
+(`kf-orchestrator/queen/deep-researcher`) are protected — `ruflo-goals` ships a
+`deep-researcher` persona, but the flagship is never pruned. Verified end-to-end
+(`plugins.test.mjs`, 9 tests; `init --plugins` integration test in
+`init-doctor.test.mjs`).
+
+| port-tier plugin | new agent(s) on enable | why you'd enable it |
+|---|---|---|
+| ruflo-ddd | kf-domain-modeler | bounded contexts, aggregates, domain events |
+| ruflo-security-audit | kf-security-auditor | dependency/CVE scan, policy gates |
+| ruflo-adr | kf-adr-architect | Architecture Decision Record lifecycle |
+| ruflo-docs | kf-docs-writer | API docs (JSDoc/TSDoc/OpenAPI), drift |
+| ruflo-knowledge-graph | kf-graph-navigator | entity extraction + graph traversal |
+| ruflo-migrations | kf-migration-engineer | schema migration gen/validate/rollback |
+| ruflo-plugin-creator | kf-plugin-developer | scaffold new plugins (meta; low relevance) |
+| ruflo-goals | kf-dossier-investigator, kf-horizon-tracker (+goal-planner/deep-researcher already in base/flagship) | long-horizon GOAP planning, deep research |

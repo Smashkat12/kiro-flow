@@ -32,10 +32,16 @@ import {
 import {
   CORE_AGENT_PREFERENCE, CORE_TARGET, DEFAULT_MODEL_MAP, nativeToolsFor, flagshipModel,
 } from './convert/tool-map.mjs';
+import {
+  PLUGINS_REL, resolvePlugins, writePlugins, pluginExtraSources, reconcilePlugins,
+} from './plugins.mjs';
 import { syncBinShim } from './daemon.mjs';
 
 const pkgRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 export const RUFLO_SPEC = process.env.KIRO_FLOW_RUFLO_SPEC ?? 'ruflo@~3.23.0';
+
+/** kiro-flow's own first-class agents — built by init, never pruned by plugin reconcile. */
+export const FLAGSHIP_KF_NAMES = ['kf-orchestrator', 'kf-queen', 'kf-deep-researcher'];
 
 /** Write only when content differs. Returns 'created' | 'updated' | 'unchanged'. */
 function writeIfChanged(path, content) {
@@ -253,9 +259,10 @@ function runRufloInit(dir, { force }) {
  * @param {string[]} [opts.excludeCategories]  agent source categories to exclude (persisted, reproducible)
  * @returns {{steps: Array<{step: string, status: string, detail?: string}>}}
  */
-export function initWorkspace({ dir, force = false, skipRufloInit = false, cleanCc = true, excludeCategories = [] }) {
+export function initWorkspace({ dir, force = false, skipRufloInit = false, cleanCc = true, excludeCategories = [], includePlugins = [] }) {
   const steps = [];
   const step = (name, status, detail) => steps.push({ step: name, status, ...(detail ? { detail } : {}) });
+  let pluginSummary = null;
 
   // 1. ruflo init. Sentinel is the hook kernel (.claude/helpers/hook-handler.cjs),
   // NOT .claude/settings.json — clean-cc removes settings.json, and the sentinel
@@ -281,11 +288,20 @@ export function initWorkspace({ dir, force = false, skipRufloInit = false, clean
     step(EXCLUDE_REL, writeIfChanged(join(dir, EXCLUDE_REL), JSON.stringify(exclude, null, 2) + '\n'));
   }
 
-  // 2. convert agents
+  // 2c. port-tier plugins (dossier 11) — persisted enabled set, replayed so
+  // re-inits keep plugin agents/skills/commands in sync. Vendored → no fetch.
+  const enabledPlugins = resolvePlugins(dir, { add: includePlugins });
+  if (enabledPlugins.length || existsSync(join(dir, PLUGINS_REL))) {
+    writePlugins(dir, enabledPlugins);
+    step(PLUGINS_REL, enabledPlugins.length ? `enabled: ${enabledPlugins.join(', ')}` : 'none enabled');
+  }
+  const extraSources = pluginExtraSources(enabledPlugins);
+
+  // 2. convert agents (base library + enabled plugins in one dedup pass)
   const agentSource = join(dir, '.claude', 'agents');
   let coreKfNames;
   if (existsSync(agentSource)) {
-    const { report, manifest } = convertAgents({ source: agentSource, out: join(dir, '.kiro', 'agents'), modelMap, exclude });
+    const { report, manifest } = convertAgents({ source: agentSource, out: join(dir, '.kiro', 'agents'), modelMap, exclude, extraSources });
     coreKfNames = manifest.filter((a) => a.core).map((a) => a.name);
     // prune any excluded agents an earlier run had emitted (json + prompt)
     let pruned = 0;
@@ -296,7 +312,22 @@ export function initWorkspace({ dir, force = false, skipRufloInit = false, clean
       ]) if (existsSync(p)) { rmSync(p, { force: true }); pruned += 1; }
     }
     const exDetail = report.excluded.length ? `; ${new Set(report.excluded).size} excluded${pruned ? `, ${pruned} pruned` : ''}` : '';
-    step('convert agents', 'done', `${report.counts.emitted} agents (${report.counts.skipped} skipped, ${report.counts.deduped} deduped; core: ${coreKfNames.length}${exDetail})`);
+    const plDetail = extraSources.length ? `; +${extraSources.length} plugin source(s)` : '';
+    step('convert agents', 'done', `${report.counts.emitted} agents (${report.counts.skipped} skipped, ${report.counts.deduped} deduped; core: ${coreKfNames.length}${exDetail}${plDetail})`);
+    // reconcile plugin skills/commands and prune disabled plugins' unique agents,
+    // keyed off the names conversion actually emitted (never a colliding base agent)
+    const emitted = new Set(manifest.map((a) => a.name));
+    pluginSummary = { ...reconcilePlugins(dir, enabledPlugins, emitted, FLAGSHIP_KF_NAMES), emitted: report.counts.emitted };
+    const inst = [];
+    if (pluginSummary.installedSkills.length) inst.push(`+${new Set(pluginSummary.installedSkills).size} skills`);
+    if (pluginSummary.installedCommands.length) inst.push(`+${pluginSummary.installedCommands.length} commands`);
+    if (pluginSummary.prunedAgents.length) inst.push(`-${pluginSummary.prunedAgents.length} agents`);
+    if (pluginSummary.removedSkills.length || pluginSummary.removedCommands.length) {
+      inst.push(`-${new Set(pluginSummary.removedSkills).size} skills/${pluginSummary.removedCommands.length} cmd-dirs`);
+    }
+    if (inst.length || enabledPlugins.length) {
+      step('plugins reconcile', 'done', `${enabledPlugins.length} enabled${inst.length ? `; ${inst.join(', ')}` : ''}`);
+    }
   } else {
     step('convert agents', 'skipped', 'no .claude/agents directory');
   }
@@ -362,5 +393,5 @@ export function initWorkspace({ dir, force = false, skipRufloInit = false, clean
     step('clean Claude-Code files', 'skipped', '--keep-cc');
   }
 
-  return { steps };
+  return { steps, pluginSummary };
 }

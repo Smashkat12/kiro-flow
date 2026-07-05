@@ -63,7 +63,7 @@ function walk(dir, out = []) {
   return out;
 }
 
-function sanitizeName(raw) {
+export function sanitizeName(raw) {
   const s = raw.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[-_]+|[-_]+$/g, '');
   if (!/^[a-z0-9]/.test(s)) throw new Error(`cannot sanitize agent name: ${raw}`);
   return s;
@@ -174,6 +174,11 @@ export function buildAgent({ name, attrs, body, category }, ctx) {
  * @param {object} opts
  * @param {string} opts.source   dir containing the .md personas
  * @param {string} opts.out      output dir (.kiro/agents)
+ * @param {Array<{dir:string,category:string}>} [opts.extraSources]  additional
+ *   persona dirs merged into the SAME conversion pass (e.g. vendored port-tier
+ *   plugin agents). Each file's category is forced to the given `category` so it
+ *   picks up a sensible tool profile; name collisions with the base library
+ *   dedup normally (longest body wins), so re-running is deterministic.
  * @param {string} [opts.profilesPath]
  * @param {string} [opts.toolsDataPath]
  * @param {boolean} [opts.inlinePrompts]
@@ -190,7 +195,16 @@ export function convertAgents(opts) {
     hooks = true,
     modelMap = DEFAULT_MODEL_MAP,
     exclude = {},
+    extraSources = [],
   } = opts;
+  // base library first, then each extra source with a forced category prefix so
+  // categoryOf() resolves to a real tool profile (e.g. 'goal', 'architecture').
+  const sources = [
+    { dir: source.toString(), prefix: '' },
+    ...extraSources.map((s) => ({ dir: s.dir, prefix: `${s.category}${sep}` })),
+  ];
+  const allFiles = sources.flatMap((s) =>
+    walk(s.dir).sort().map((file) => ({ src: s, file })));
   const excludeCats = new Set(exclude.categories ?? []);
   const excludeNames = new Set(exclude.names ?? []);
 
@@ -211,8 +225,8 @@ export function convertAgents(opts) {
 
   // ── discover + parse ──
   const parsed = [];
-  for (const file of walk(source).sort()) {
-    const rel = relative(source, file);
+  for (const { src, file } of allFiles) {
+    const rel = src.prefix + relative(src.dir, file);
     if (rel.split(sep)[0] === 'templates') {
       report.skipped.push({ file: rel, reason: 'templates directory (not live personas)' });
       continue;
@@ -278,7 +292,7 @@ export function convertAgents(opts) {
   }
 
   report.counts = {
-    sourceFiles: walk(source).length,
+    sourceFiles: allFiles.length,
     parsed: parsed.length,
     skipped: report.skipped.length,
     deduped: report.deduped.length,

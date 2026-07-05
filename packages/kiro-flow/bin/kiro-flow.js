@@ -15,6 +15,7 @@ import { cmdCommand } from '../src/cmd.mjs';
 import { powerPackCommand } from '../src/power.mjs';
 import { skillsCommand } from '../src/convert/skills.mjs';
 import { modelsCommand } from '../src/models.mjs';
+import { pluginsCommand, discoverPlugins, writePlugins } from '../src/plugins.mjs';
 
 const USAGE = `kiro-flow — ruflo on AWS Kiro
 
@@ -35,12 +36,15 @@ Usage:
   kiro-flow models [--dir <dir>]       show tier→model map + which agents pin what; flag unavailable
   kiro-flow skills <list|add|remove>   port ruflo skill playbooks to .kiro/skills (auto-loaded)
                                        add: --core | <name…> | --all   remove: <name…> | --all
+  kiro-flow plugins <list|add|remove>  enable port-tier ruflo plugins (agents+commands+skills)
+                                       add/remove: <name…> | --all  (persisted, replayed by init)
   kiro-flow power pack [--out <dir>]   assemble the team-distributable Kiro Power bundle
   kiro-flow clean-cc [--dir <dir>]     remove inert Claude-Code files (CLAUDE.md, .mcp.json, …)
   kiro-flow shim-path                  print the shim dir (for manual PATH injection)
 
 Options (init):
   --dir <dir>         target workspace (default: cwd)
+  --plugins <names>   enable port-tier plugins (comma-sep; persisted, e.g. ddd,security-audit)
   --force             rerun ruflo init over an initialized workspace
   --skip-ruflo-init   only the Kiro-side steps (convert, mcp.json, steering, orchestrator)
   --keep-cc           keep inert Claude-Code files (default: remove CLAUDE.md, .mcp.json, .claude/settings.json)
@@ -128,12 +132,15 @@ if (cmd === 'convert' && sub === 'agents') {
       'skip-ruflo-init': { type: 'boolean', default: false },
       'keep-cc': { type: 'boolean', default: false },
       exclude: { type: 'string' },
+      plugins: { type: 'string' },
     },
   });
   const dir = resolve(values.dir);
   const excludeCategories = (values.exclude ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  const includePlugins = (values.plugins ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+    .map((n) => (n.startsWith('ruflo-') ? n : `ruflo-${n}`));
   console.log(`kiro-flow init → ${dir}\n`);
-  const { steps } = initWorkspace({ dir, force: values.force, skipRufloInit: values['skip-ruflo-init'], cleanCc: !values['keep-cc'], excludeCategories });
+  const { steps } = initWorkspace({ dir, force: values.force, skipRufloInit: values['skip-ruflo-init'], cleanCc: !values['keep-cc'], excludeCategories, includePlugins });
   for (const s of steps) console.log(`  ${s.status === 'skipped' ? '·' : '✓'} ${s.step}: ${s.detail ?? s.status}`);
   console.log('\nNext: kiro-flow doctor   (checks kiro-cli, MCP handshake, agents)');
 } else if (cmd === 'doctor') {
@@ -237,6 +244,25 @@ if (cmd === 'convert' && sub === 'agents') {
     all: values.all,
     names: positionals,
   }));
+} else if (cmd === 'plugins') {
+  const { values, positionals } = parseArgs({
+    args: rest,
+    options: { dir: { type: 'string', default: '.' }, all: { type: 'boolean', default: false } },
+    allowPositionals: true,
+  });
+  const dir = resolve(values.dir);
+  let names = positionals;
+  if (values.all && (sub === 'add' || sub === 'remove')) {
+    names = discoverPlugins().map((p) => p.name);
+  }
+  // reinit callback: persist the enabled set, then rerun the Kiro side of init
+  // so agents/skills/commands reconcile; return the plugin summary for display.
+  const reinit = (enabled) => {
+    writePlugins(dir, enabled);
+    const { pluginSummary } = initWorkspace({ dir, skipRufloInit: true });
+    return pluginSummary;
+  };
+  process.exit(pluginsCommand({ dir, sub, names, reinit }));
 } else if (cmd === 'power' && sub === 'pack') {
   const outIdx = rest.indexOf('--out');
   const out = outIdx >= 0 ? rest[outIdx + 1] : 'powers/kiro-flow';
