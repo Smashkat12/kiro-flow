@@ -6,11 +6,20 @@
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { convertAgents } from '../src/convert/agents.mjs';
+import { initWorkspace } from '../src/init.mjs';
+import { runDoctor, formatDoctorReport } from '../src/doctor.mjs';
 
 const USAGE = `kiro-flow — ruflo on AWS Kiro
 
 Usage:
-  kiro-flow convert agents [options]
+  kiro-flow init [options]             ruflo init → convert → MCP + steering + orchestrator
+  kiro-flow convert agents [options]   convert .claude/agents personas to .kiro/agents
+  kiro-flow doctor [options]           readiness checks (node, kiro-cli, MCP, agents)
+
+Options (init):
+  --dir <dir>         target workspace (default: cwd)
+  --force             rerun ruflo init over an initialized workspace
+  --skip-ruflo-init   only the Kiro-side steps (convert, mcp.json, steering, orchestrator)
 
 Options (convert agents):
   --source <dir>      persona dir (default: .claude/agents)
@@ -19,6 +28,11 @@ Options (convert agents):
   --dry-run           report only, write nothing
   --profiles <file>   tool-profiles.json override
   --tools-data <file> claude-flow tool-name list override
+
+Options (doctor):
+  --dir <dir>         workspace to check (default: cwd)
+  --no-mcp            skip the live MCP handshake (slow on cold npx cache)
+  --json              machine-readable output
 `;
 
 const [cmd, sub, ...rest] = process.argv.slice(2);
@@ -57,6 +71,33 @@ if (cmd === 'convert' && sub === 'agents') {
   if (report.verifyAtWork.length) {
     console.log(`\nverify at work (${new Set(report.verifyAtWork).size} items) — see conversion-report.json`);
   }
+} else if (cmd === 'init') {
+  const { values } = parseArgs({
+    args: [sub, ...rest].filter((a) => a !== undefined),
+    options: {
+      dir: { type: 'string', default: '.' },
+      force: { type: 'boolean', default: false },
+      'skip-ruflo-init': { type: 'boolean', default: false },
+    },
+  });
+  const dir = resolve(values.dir);
+  console.log(`kiro-flow init → ${dir}\n`);
+  const { steps } = initWorkspace({ dir, force: values.force, skipRufloInit: values['skip-ruflo-init'] });
+  for (const s of steps) console.log(`  ${s.status === 'skipped' ? '·' : '✓'} ${s.step}: ${s.detail ?? s.status}`);
+  console.log('\nNext: kiro-flow doctor   (checks kiro-cli, MCP handshake, agents)');
+} else if (cmd === 'doctor') {
+  const { values } = parseArgs({
+    args: [sub, ...rest].filter((a) => a !== undefined),
+    options: {
+      dir: { type: 'string', default: '.' },
+      mcp: { type: 'boolean', default: true },
+      json: { type: 'boolean', default: false },
+    },
+    allowNegative: true,
+  });
+  const { checks, failed } = await runDoctor({ dir: resolve(values.dir), checkMcp: values.mcp });
+  console.log(values.json ? JSON.stringify({ checks, failed }, null, 2) : formatDoctorReport(checks));
+  process.exit(failed ? 1 : 0);
 } else if (cmd === '--help' || cmd === '-h' || cmd === undefined || cmd === 'help') {
   console.log(USAGE);
 } else {

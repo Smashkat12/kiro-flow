@@ -75,23 +75,32 @@ export const NAME_PROFILE = {
 };
 
 /**
- * The ~12 agents registered as available/trusted in the M3 orchestrator
- * template; all others stay dormant until `kiro-flow agents enable`.
+ * Preference-ordered candidates for the ~12 agents the orchestrator registers
+ * as available/trusted; all others stay dormant until `kiro-flow agents enable`.
+ * The selection is computed against the corpus that actually converted —
+ * needed because the published ruflo bundle ships a slimmer agent set than the
+ * repo (3.23.0 tarball: 89 files, core/ has only planner.md), so classic names
+ * like coder/researcher may be absent and v3-era fallbacks take their slots.
  */
-export const CORE_AGENTS = [
-  'coder',
-  'planner',
-  'researcher',
-  'reviewer',
-  'tester',
-  'queen-coordinator',
-  'collective-intelligence-coordinator',
-  'swarm-memory-manager',
-  'goal-planner',
-  'code-analyzer',
-  'backend-dev',
-  'pr-manager',
+export const CORE_AGENT_PREFERENCE = [
+  // the classic 12 (full corpus)
+  'coder', 'planner', 'researcher', 'reviewer', 'tester',
+  'queen-coordinator', 'collective-intelligence-coordinator', 'swarm-memory-manager',
+  'goal-planner', 'code-analyzer', 'backend-dev', 'pr-manager',
+  // v3-era fallbacks (published-bundle corpus)
+  'v3-queen-coordinator', 'hierarchical-coordinator', 'mesh-coordinator',
+  'test-architect', 'production-validator', 'analyst',
+  'code-goal-planner', 'sublinear-goal-planner',
+  'typescript-specialist', 'python-specialist', 'v3-security-architect', 'database-specialist',
 ];
+
+export const CORE_TARGET = 12;
+
+/** Pick up to CORE_TARGET core agents (by preference order) from those present. */
+export function selectCoreAgents(presentNames) {
+  const present = new Set(presentNames);
+  return CORE_AGENT_PREFERENCE.filter((n) => present.has(n)).slice(0, CORE_TARGET);
+}
 
 /**
  * Map one Claude Code frontmatter tool name to Kiro references.

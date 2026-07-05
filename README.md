@@ -6,7 +6,7 @@ Recreates [ruflo](https://github.com/ruvnet/ruflo) (claude-flow) for **AWS Kiro*
 
 Adapter, not fork. The published `ruflo` npm package's genuinely host-agnostic engine is consumed unmodified:
 
-- **MCP server** (~299 tools) — registered with Kiro via `kiro-cli mcp add` / `.kiro/settings/mcp.json`
+- **MCP server** (350 tools) — registered with Kiro via `kiro-cli mcp add` / `.kiro/settings/mcp.json`
 - **Memory engine** — SQLite (FTS5/BM25) + HNSW vector hybrid search in `.swarm/memory.db`
 - **Swarm coordination** — topologies, Queen coordinator, consensus, message bus
 - **Worker daemon** — background workers, 12 triggers
@@ -32,9 +32,9 @@ The thin `kiro-flow` package adds what Kiro needs:
 ## Status
 
 - [x] M0 — workspace + baseline
-- [ ] M1 — ruflo MCP server registered in Kiro (~299 tools)
-- [ ] M2 — agent library conversion (108 personas)
-- [ ] M3 — `kiro-flow init` + install.sh
+- [x] M1 — ruflo MCP server registered in Kiro (350 tools; work-side checklist pending)
+- [x] M2 — agent library conversion (88 from repo corpus / 73 from published bundle)
+- [x] M3 — `kiro-flow init` + `kiro-flow doctor` + install.sh (work-side demo pending)
 - [ ] M4 — hooks mapping
 - [ ] M5 — headless executor (kiro-claude-shim) + workers/daemon
 - [ ] M6 — swarm / hive-mind

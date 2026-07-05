@@ -17,7 +17,7 @@ import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseFrontmatter, parseToolList } from './frontmatter.mjs';
 import {
-  CATEGORY_PROFILE, CORE_AGENTS, NAME_PROFILE, VERIFY_AT_WORK, mapToolName,
+  CATEGORY_PROFILE, NAME_PROFILE, VERIFY_AT_WORK, mapToolName, selectCoreAgents,
 } from './tool-map.mjs';
 
 const pkgRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
@@ -194,6 +194,7 @@ export function convertAgents(opts) {
 
   // ── build + emit ──
   const ctx = { liveCfTools, profiles, inlinePrompts, report, profileCache: new Map() };
+  const coreSet = new Set(selectCoreAgents([...byName.keys()]));
   const manifest = [];
   const agents = [];
   for (const p of [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))) {
@@ -205,7 +206,7 @@ export function convertAgents(opts) {
       source: p.rel,
       category,
       profile: profileKey,
-      core: CORE_AGENTS.includes(p.name),
+      core: coreSet.has(p.name),
       enabled: true,
     });
   }

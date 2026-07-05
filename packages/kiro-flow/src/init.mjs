@@ -1,0 +1,150 @@
+/**
+ * kiro-flow init — one command to make a workspace ruflo-on-Kiro:
+ *
+ *   1. `npx ruflo init --yes --no-global` + `init upgrade --add-missing`
+ *      (skipped if already initialized; --no-global keeps ~/.claude/CLAUDE.md
+ *      untouched; the upgrade pass pulls the full bundled agent library)
+ *   2. convert .claude/agents → .kiro/agents (M2 converter)
+ *   3. register the MCP server: workspace mcp.json (CLI) + .kiro/settings/
+ *      mcp.json (IDE), server key `claude-flow`, merged non-destructively
+ *   4. steering file .kiro/steering/ruflo.md
+ *   5. kf-orchestrator agent (subagent fan-out to the core 12)
+ *
+ * Every write is compare-before-write, so a second run is a zero-diff no-op.
+ */
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { convertAgents, expandProfile, DEFAULT_PROFILES, DEFAULT_TOOLS_DATA } from './convert/agents.mjs';
+import { CORE_AGENT_PREFERENCE, CORE_TARGET } from './convert/tool-map.mjs';
+
+const pkgRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+export const RUFLO_SPEC = process.env.KIRO_FLOW_RUFLO_SPEC ?? 'ruflo@~3.23.0';
+
+/** Write only when content differs. Returns 'created' | 'updated' | 'unchanged'. */
+function writeIfChanged(path, content) {
+  if (existsSync(path)) {
+    if (readFileSync(path, 'utf8') === content) return 'unchanged';
+    writeFileSync(path, content);
+    return 'updated';
+  }
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, content);
+  return 'created';
+}
+
+/** Merge the claude-flow server block into an mcp.json, preserving other servers. */
+function mergeMcpJson(path, serverBlock) {
+  let existing = {};
+  if (existsSync(path)) {
+    try { existing = JSON.parse(readFileSync(path, 'utf8')); } catch { existing = {}; }
+  }
+  const merged = {
+    ...existing,
+    mcpServers: { ...(existing.mcpServers ?? {}), 'claude-flow': serverBlock },
+  };
+  return writeIfChanged(path, JSON.stringify(merged, null, 2) + '\n');
+}
+
+/**
+ * @param {string[]} [coreKfNames] the kf-* agents to register with the
+ * subagent tool — pass the manifest's core selection so the orchestrator only
+ * references agents that actually exist in this workspace. Falls back to the
+ * first CORE_TARGET preference names when no manifest is available.
+ */
+export function buildOrchestratorAgent(coreKfNames) {
+  const liveCfTools = new Set(JSON.parse(readFileSync(DEFAULT_TOOLS_DATA, 'utf8')));
+  const profiles = JSON.parse(readFileSync(DEFAULT_PROFILES, 'utf8'));
+  const cfRefs = expandProfile(profiles.core, liveCfTools).map((t) => `@claude-flow/${t}`);
+  const kfCore = coreKfNames?.length
+    ? [...coreKfNames].sort()
+    : CORE_AGENT_PREFERENCE.slice(0, CORE_TARGET).map((n) => `kf-${n}`);
+  return {
+    $schema: 'https://github.com/smashkat12/kiro-flow/schemas/kiro-agent.schema.json',
+    name: 'kf-orchestrator',
+    description: 'ruflo orchestrator for Kiro — coordinates the kf-* agent library via subagent fan-out and claude-flow swarm/memory tools',
+    prompt: 'file://./prompts/kf-orchestrator.md',
+    tools: ['read', 'write', 'shell', 'subagent', ...cfRefs],
+    allowedTools: ['read', ...cfRefs],
+    toolsSettings: {
+      subagent: { availableAgents: kfCore, trustedAgents: kfCore },
+    },
+    includeMcpJson: true,
+  };
+}
+
+function npxRuflo(dir, args) {
+  execFileSync('npx', ['-y', RUFLO_SPEC, ...args], {
+    cwd: dir,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 300_000,
+    env: { ...process.env, CLAUDE_FLOW_SETUP_MCP: '0' },
+  });
+}
+
+function runRufloInit(dir, { force }) {
+  // --all-agents is a dead flag in the published 3.23.0 (parser camelCases to
+  // flags.allAgents, init.ts reads flags['all-agents'] — same bug class as
+  // upstream #2098A). `init upgrade --add-missing` reads both spellings and
+  // copies every bundled agent category, so chain it to get the full library.
+  npxRuflo(dir, ['init', '--yes', '--no-global', ...(force ? ['--force'] : [])]);
+  npxRuflo(dir, ['init', 'upgrade', '--add-missing']);
+}
+
+/**
+ * @param {object} opts
+ * @param {string} opts.dir            target workspace
+ * @param {boolean} [opts.force]
+ * @param {boolean} [opts.skipRufloInit]  tests / already-initialized workspaces
+ * @returns {{steps: Array<{step: string, status: string, detail?: string}>}}
+ */
+export function initWorkspace({ dir, force = false, skipRufloInit = false }) {
+  const steps = [];
+  const step = (name, status, detail) => steps.push({ step: name, status, ...(detail ? { detail } : {}) });
+
+  // 1. ruflo init
+  const rufloInitialized = existsSync(join(dir, '.claude', 'settings.json'));
+  if (skipRufloInit) {
+    step('ruflo init', 'skipped', 'disabled by flag');
+  } else if (rufloInitialized && !force) {
+    step('ruflo init', 'skipped', '.claude/settings.json exists (use --force to rerun)');
+  } else {
+    runRufloInit(dir, { force });
+    step('ruflo init', 'done', `${RUFLO_SPEC} init --yes --no-global + upgrade --add-missing (full agent library)`);
+  }
+
+  // 2. convert agents
+  const agentSource = join(dir, '.claude', 'agents');
+  let coreKfNames;
+  if (existsSync(agentSource)) {
+    const { report, manifest } = convertAgents({ source: agentSource, out: join(dir, '.kiro', 'agents') });
+    coreKfNames = manifest.filter((a) => a.core).map((a) => a.name);
+    step('convert agents', 'done', `${report.counts.emitted} agents (${report.counts.skipped} skipped, ${report.counts.deduped} deduped; core: ${coreKfNames.length})`);
+  } else {
+    step('convert agents', 'skipped', 'no .claude/agents directory');
+  }
+
+  // 3. MCP registration (workspace mcp.json for CLI, .kiro/settings/mcp.json for IDE)
+  const serverBlock = JSON.parse(readFileSync(join(pkgRoot, 'templates', 'mcp.json'), 'utf8')).mcpServers['claude-flow'];
+  step('mcp.json (CLI)', mergeMcpJson(join(dir, 'mcp.json'), serverBlock));
+  step('.kiro/settings/mcp.json (IDE)', mergeMcpJson(join(dir, '.kiro', 'settings', 'mcp.json'), serverBlock));
+
+  // 4. steering
+  const steering = readFileSync(join(pkgRoot, 'templates', 'steering-ruflo.md'), 'utf8');
+  step('.kiro/steering/ruflo.md', writeIfChanged(join(dir, '.kiro', 'steering', 'ruflo.md'), steering));
+
+  // 5. orchestrator agent
+  const orchestrator = buildOrchestratorAgent(coreKfNames);
+  step('.kiro/agents/kf-orchestrator.json', writeIfChanged(
+    join(dir, '.kiro', 'agents', 'kf-orchestrator.json'),
+    JSON.stringify(orchestrator, null, 2) + '\n',
+  ));
+  const orchestratorPrompt = readFileSync(join(pkgRoot, 'templates', 'prompts', 'kf-orchestrator.md'), 'utf8');
+  step('.kiro/agents/prompts/kf-orchestrator.md', writeIfChanged(
+    join(dir, '.kiro', 'agents', 'prompts', 'kf-orchestrator.md'),
+    orchestratorPrompt,
+  ));
+
+  return { steps };
+}
