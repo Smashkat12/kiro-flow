@@ -6,7 +6,7 @@
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { convertAgents } from '../src/convert/agents.mjs';
-import { initWorkspace } from '../src/init.mjs';
+import { initWorkspace, cleanClaudeCode } from '../src/init.mjs';
 import { runDoctor, formatDoctorReport } from '../src/doctor.mjs';
 import { daemonCommand, workerCommand, runRuflo, resolveShimDir } from '../src/daemon.mjs';
 import { hiveSpawnCommand } from '../src/hive.mjs';
@@ -31,12 +31,14 @@ Usage:
   kiro-flow session resume <id>        kiro-cli chat --resume-id <id> [--agent kf-…]
   kiro-flow memory refresh             rebuild the recall cache now (hooks do it detached)
   kiro-flow power pack [--out <dir>]   assemble the team-distributable Kiro Power bundle
+  kiro-flow clean-cc [--dir <dir>]     remove inert Claude-Code files (CLAUDE.md, .mcp.json, …)
   kiro-flow shim-path                  print the shim dir (for manual PATH injection)
 
 Options (init):
   --dir <dir>         target workspace (default: cwd)
   --force             rerun ruflo init over an initialized workspace
   --skip-ruflo-init   only the Kiro-side steps (convert, mcp.json, steering, orchestrator)
+  --keep-cc           keep inert Claude-Code files (default: remove CLAUDE.md, .mcp.json, .claude/settings.json)
 
 Options (convert agents):
   --source <dir>      persona dir (default: .claude/agents)
@@ -118,11 +120,12 @@ if (cmd === 'convert' && sub === 'agents') {
       dir: { type: 'string', default: '.' },
       force: { type: 'boolean', default: false },
       'skip-ruflo-init': { type: 'boolean', default: false },
+      'keep-cc': { type: 'boolean', default: false },
     },
   });
   const dir = resolve(values.dir);
   console.log(`kiro-flow init → ${dir}\n`);
-  const { steps } = initWorkspace({ dir, force: values.force, skipRufloInit: values['skip-ruflo-init'] });
+  const { steps } = initWorkspace({ dir, force: values.force, skipRufloInit: values['skip-ruflo-init'], cleanCc: !values['keep-cc'] });
   for (const s of steps) console.log(`  ${s.status === 'skipped' ? '·' : '✓'} ${s.step}: ${s.detail ?? s.status}`);
   console.log('\nNext: kiro-flow doctor   (checks kiro-cli, MCP handshake, agents)');
 } else if (cmd === 'doctor') {
@@ -207,6 +210,14 @@ if (cmd === 'convert' && sub === 'agents') {
   const outIdx = rest.indexOf('--out');
   const out = outIdx >= 0 ? rest[outIdx + 1] : 'powers/kiro-flow';
   process.exit(powerPackCommand({ out: resolve(out) }));
+} else if (cmd === 'clean-cc') {
+  const dirIdx = [sub, ...rest].indexOf('--dir');
+  const dir = resolve(dirIdx >= 0 ? [sub, ...rest][dirIdx + 1] : '.');
+  const removed = cleanClaudeCode(dir);
+  console.log(removed.length
+    ? `removed ${removed.length} inert Claude-Code file(s): ${removed.join(', ')}`
+    : 'nothing to remove — no inert Claude-Code files present');
+  console.log('(kept: .claude/helpers, .claude/commands, .claude-flow/ — all load-bearing on Kiro)');
 } else if (cmd === 'shim-path') {
   console.log(resolveShimDir(resolve(sub === '--dir' ? rest[0] ?? '.' : '.')));
 } else if (cmd === '--help' || cmd === '-h' || cmd === undefined || cmd === 'help') {

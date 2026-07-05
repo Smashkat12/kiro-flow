@@ -50,6 +50,8 @@ The thin `kiro-flow` package adds what Kiro needs:
 3. **Hook adapter** — Kiro hook events (`agentSpawn`/`preToolUse`/`postToolUse`/`stop`/`userPromptSubmit`) → ruflo's hook handlers
 4. **`kiro-flow init` + one-line install.sh** — mirrors ruflo's installer for Kiro
 
+`init` also removes the Claude-Code-only files `ruflo init` leaves behind that Kiro never reads — `CLAUDE.md`, `.claude/settings.json`, `.mcp.json` (pass `--keep-cc` to keep them; run `kiro-flow clean-cc` on an existing workspace). The load-bearing `.claude/helpers/` (ruflo's hook kernel), `.claude/commands/`, and all of `.claude-flow/` (ruflo's engine state — *not* Claude Code, despite the name) are kept.
+
 ## Layout
 
 | Path | Purpose |

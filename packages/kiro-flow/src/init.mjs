@@ -12,12 +12,14 @@
  *      agent's hooks delegate through it to ruflo's .claude/helpers kernel)
  *   6. kiro-claude-shim .kiro/kiro-flow/shim/claude (M5 — headless worker plane)
  *   7. kf-judge → ~/.kiro/agents (global; M8 — judge calls run in a temp cwd)
- *   8. kf-orchestrator + kf-queen agents (subagent fan-out / hive-mind plane)
+ *   8. kf-orchestrator + kf-queen + kf-deep-researcher agents
+ *   9. clean inert Claude-Code files (CLAUDE.md, .claude/settings.json,
+ *      .mcp.json — Kiro reads none; --keep-cc to skip)
  *
  * Every write is compare-before-write, so a second run is a zero-diff no-op.
  */
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -139,6 +141,32 @@ export function buildDeepResearcherAgent() {
   };
 }
 
+/**
+ * Files `ruflo init` writes that are Claude-Code-only and inert on Kiro
+ * (verified: the ruflo hook kernel reads none of these at runtime; Kiro reads
+ * .kiro/steering, .kiro/agents/*.json hooks, and mcp.json / .kiro/settings/
+ * mcp.json instead). Safe to remove on a Kiro-only machine. The load-bearing
+ * `.claude/helpers/`, `.claude/commands/`, and all of `.claude-flow/` are NOT
+ * in this list.
+ */
+export const INERT_CC_FILES = [
+  'CLAUDE.md',
+  'CLAUDE.local.md',
+  join('.claude', 'settings.json'),
+  join('.claude', 'settings.local.json'),
+  '.mcp.json',
+];
+
+/** Remove the inert Claude-Code files from a workspace. Returns removed rel paths. */
+export function cleanClaudeCode(dir) {
+  const removed = [];
+  for (const rel of INERT_CC_FILES) {
+    const p = join(dir, rel);
+    if (existsSync(p)) { rmSync(p, { force: true }); removed.push(rel); }
+  }
+  return removed;
+}
+
 function npxRuflo(dir, args) {
   execFileSync('npx', ['-y', RUFLO_SPEC, ...args], {
     cwd: dir,
@@ -162,18 +190,21 @@ function runRufloInit(dir, { force }) {
  * @param {string} opts.dir            target workspace
  * @param {boolean} [opts.force]
  * @param {boolean} [opts.skipRufloInit]  tests / already-initialized workspaces
+ * @param {boolean} [opts.cleanCc]  remove inert Claude-Code files after init (default true)
  * @returns {{steps: Array<{step: string, status: string, detail?: string}>}}
  */
-export function initWorkspace({ dir, force = false, skipRufloInit = false }) {
+export function initWorkspace({ dir, force = false, skipRufloInit = false, cleanCc = true }) {
   const steps = [];
   const step = (name, status, detail) => steps.push({ step: name, status, ...(detail ? { detail } : {}) });
 
-  // 1. ruflo init
-  const rufloInitialized = existsSync(join(dir, '.claude', 'settings.json'));
+  // 1. ruflo init. Sentinel is the hook kernel (.claude/helpers/hook-handler.cjs),
+  // NOT .claude/settings.json — clean-cc removes settings.json, and the sentinel
+  // must key off a file we keep so re-runs stay a fast no-op.
+  const rufloInitialized = existsSync(join(dir, '.claude', 'helpers', 'hook-handler.cjs'));
   if (skipRufloInit) {
     step('ruflo init', 'skipped', 'disabled by flag');
   } else if (rufloInitialized && !force) {
-    step('ruflo init', 'skipped', '.claude/settings.json exists (use --force to rerun)');
+    step('ruflo init', 'skipped', '.claude/helpers exists (use --force to rerun)');
   } else {
     runRufloInit(dir, { force });
     step('ruflo init', 'done', `${RUFLO_SPEC} init --yes --no-global + upgrade --add-missing (full agent library)`);
@@ -237,6 +268,15 @@ export function initWorkspace({ dir, force = false, skipRufloInit = false }) {
       join(dir, '.kiro', 'agents', 'prompts', `${name}.md`),
       promptBody,
     ));
+  }
+
+  // 9. clean up inert Claude-Code files (Kiro reads none of them) unless kept
+  if (cleanCc) {
+    const removed = cleanClaudeCode(dir);
+    step('clean Claude-Code files', removed.length ? 'done' : 'unchanged',
+      removed.length ? `removed ${removed.join(', ')}` : 'none present');
+  } else {
+    step('clean Claude-Code files', 'skipped', '--keep-cc');
   }
 
   return { steps };
