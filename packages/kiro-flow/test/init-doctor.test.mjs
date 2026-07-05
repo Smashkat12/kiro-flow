@@ -147,6 +147,33 @@ test('doctor: all green with mocked kiro-cli and fake MCP server', async () => {
   }
 });
 
+test('doctor: skills always-on cost reports skip / ok / warn by installed size', async () => {
+  const dir = makeFixtureWorkspace();
+  const skillDir = (n) => join(dir, '.kiro', 'skills', n);
+  const findSkills = (checks) => checks.find((c) => c.id === 'skills');
+  try {
+    // none installed → skip
+    let { checks } = await runDoctor({ dir, checkMcp: false });
+    assert.equal(findSkills(checks).status, 'skip');
+
+    // a couple of small skills → ok, count surfaced
+    for (const n of ['alpha', 'beta']) {
+      mkdirSync(skillDir(n), { recursive: true });
+      writeFileSync(join(skillDir(n), 'SKILL.md'), `---\nname: ${n}\n---\nbody`);
+    }
+    ({ checks } = await runDoctor({ dir, checkMcp: false }));
+    assert.equal(findSkills(checks).status, 'ok');
+    assert.match(findSkills(checks).detail, /2 installed/);
+
+    // one oversized skill crosses the (150k) warn threshold
+    mkdirSync(skillDir('huge'), { recursive: true });
+    writeFileSync(join(skillDir('huge'), 'SKILL.md'), 'x'.repeat(640_000)); // ~160k tokens
+    ({ checks } = await runDoctor({ dir, checkMcp: false }));
+    assert.equal(findSkills(checks).status, 'warn');
+    assert.match(findSkills(checks).detail, /trim/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('doctor: missing kiro-cli and missing agents are failures', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'kf-m3-empty-'));
   const origPath = process.env.PATH;

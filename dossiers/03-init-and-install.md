@@ -127,9 +127,10 @@ npx -y ruflo memory search "plan"      # row persisted in .swarm/memory.db
 
 > **Cost of `skills add --all`:** every `.kiro/skills/*/SKILL.md` auto-loads
 > into **every** agent's context (Kiro globs them in — no per-agent opt-out).
-> The full published set is ~33 skills ≈ **~137k tokens always-on**. On a 200k
-> window that leaves little room for the task + tools; if agents start
-> truncating or feel dull, trim back:
+> The full published set is ~33 skills ≈ **~137k tokens always-on**. That is
+> comfortable on the large windows of Sonnet / Opus 4.8 (the employer models),
+> and `kiro-flow doctor` reports it as ok. If you later run tighter-window
+> models or add plugin skills and agents start truncating, trim back:
 > `kiro-flow skills remove --all && kiro-flow skills add --core` (curated 4,
 > ~20k), or remove individually (`kiro-flow skills list` shows per-skill cost).
 > Re-run `kiro-flow skills add --all` any time — it is idempotent.

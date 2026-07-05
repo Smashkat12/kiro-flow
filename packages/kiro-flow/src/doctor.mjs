@@ -9,6 +9,16 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { accessSync, constants as fsConstants, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { installedSkillsCost } from './convert/skills.mjs';
+
+/**
+ * Warn only when installed skills auto-load past this. Calibrated for the
+ * large windows of Sonnet / Opus 4.8 (the employer's models): the full
+ * published skill set (~137k) sits under this and reports ok — the warn is
+ * for genuinely excessive loads (e.g. + plugin skills) that would crowd even a
+ * big window. Override via KIRO_FLOW_SKILLS_WARN.
+ */
+const SKILLS_TOKEN_WARN = Number(process.env.KIRO_FLOW_SKILLS_WARN) || 150_000;
 
 const ok = (detail) => ({ status: 'ok', detail });
 const warn = (detail) => ({ status: 'warn', detail });
@@ -194,6 +204,18 @@ export async function runDoctor({ dir, checkMcp = true }) {
         ? ok(`${pinned.size} model(s) pinned, all offered by kiro-cli`)
         : warn(`${bad.map(([id, ags]) => `${id} (${ags.length} agent${ags.length > 1 ? 's' : ''})`).join('; ')} not in kiro-cli --list-models — edit ${join('.kiro', 'kiro-flow', 'model-map.json')} and rerun kiro-flow init`));
     }
+  }
+
+  // skills always-on cost (M11 resources pass): every installed .kiro/skills
+  // SKILL.md auto-loads into every agent, so flag when it crowds the window
+  const skills = installedSkillsCost(dir);
+  const kTok = Math.round(skills.tokens / 1000);
+  if (skills.count === 0) {
+    add('skills', 'skills always-on cost', skip('none installed — kiro-flow skills add --core|--all'));
+  } else if (skills.tokens <= SKILLS_TOKEN_WARN) {
+    add('skills', 'skills always-on cost', ok(`${skills.count} installed → ~${kTok}k tokens auto-loaded into every agent (fine on Sonnet/Opus 4.8's window)`));
+  } else {
+    add('skills', 'skills always-on cost', warn(`${skills.count} installed → ~${kTok}k tokens auto-loaded into EVERY agent (crowds even a large window; trim with 'kiro-flow skills remove --all && kiro-flow skills add --core', or remove individually)`));
   }
 
   // hook plumbing: agents reference the adapter; adapter delegates to ruflo's helpers

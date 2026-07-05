@@ -76,6 +76,20 @@ export function installedSkills(dir) {
 }
 
 /**
+ * The always-on cost of installed skills: they auto-load into every agent, so
+ * this is roughly how much of each agent's window is spent before any work.
+ * @returns {{count:number, tokens:number, names:string[]}}
+ */
+export function installedSkillsCost(dir) {
+  const skills = discoverSkills(join(dir, SKILL_DEST_REL));
+  return {
+    count: skills.length,
+    tokens: skills.reduce((n, s) => n + s.tokens, 0),
+    names: skills.map((s) => s.name),
+  };
+}
+
+/**
  * Resolve which skill names to act on from a selection.
  * @param {{core?:boolean, all?:boolean, names?:string[]}} sel
  * @param {Array<{name}>} available
