@@ -17,6 +17,7 @@ import { skillsCommand } from '../src/convert/skills.mjs';
 import { modelsCommand } from '../src/models.mjs';
 import { pluginsCommand, discoverPlugins, writePlugins } from '../src/plugins.mjs';
 import { costCommand } from '../src/cost.mjs';
+import { dashboardCommand } from '../src/dashboard.mjs';
 
 const USAGE = `kiro-flow — ruflo on AWS Kiro
 
@@ -41,6 +42,8 @@ Usage:
                                        add/remove: <name…> | --all  (persisted, replayed by init)
   kiro-flow cost [add|clear] [opts]    Kiro-credit spend from the ledger (by model/entrypoint/day)
                                        cost [--since <days>] [--json] · cost add <credits> [--model --note]
+  kiro-flow dashboard [--open]         render a local read-only telemetry page (agents/cost/hive/learning)
+                                       → .kiro/kiro-flow/dashboard.html  [--out <file>] [--json]
   kiro-flow power pack [--out <dir>]   assemble the team-distributable Kiro Power bundle
   kiro-flow clean-cc [--dir <dir>]     remove inert Claude-Code files (CLAUDE.md, .mcp.json, …)
   kiro-flow shim-path                  print the shim dir (for manual PATH injection)
@@ -289,6 +292,22 @@ if (cmd === 'convert' && sub === 'agents') {
     credits: knownSub === 'add' && positionals[0] != null ? Number(positionals[0]) : undefined,
     model: values.model,
     note: values.note,
+  }));
+} else if (cmd === 'dashboard') {
+  const { values } = parseArgs({
+    args: [sub, ...rest].filter((a) => a !== undefined),
+    options: {
+      dir: { type: 'string', default: '.' },
+      out: { type: 'string' },
+      open: { type: 'boolean', default: false },
+      json: { type: 'boolean', default: false },
+    },
+  });
+  process.exit(dashboardCommand({
+    dir: resolve(values.dir),
+    ...(values.out ? { out: resolve(values.out) } : {}),
+    open: values.open,
+    json: values.json,
   }));
 } else if (cmd === 'power' && sub === 'pack') {
   const outIdx = rest.indexOf('--out');

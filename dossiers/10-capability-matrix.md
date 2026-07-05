@@ -70,6 +70,7 @@ as-is · **dropped** = no Kiro equivalent, documented.
 | 34 skills | **ported** (opt-in) | M11 resources pass: Kiro DOES have a skills surface — `.kiro/skills/*/SKILL.md` auto-loads into every agent (verified via `/context show`). `kiro-flow skills add --core\|<name>\|--all` copies ruflo's 38 skills there; opt-in because all 38 = ~151k tokens always-on (curated core ~20k). `cmd`/steering/personas still cover the rest |
 | Powers / team distribution | **built** (IDE verify pending) | M10: `powers/kiro-flow` bundle + `power pack`; install.sh; clean-machine test |
 | Cost tracker | **rebuilt** | M14: ruflo reads CC transcripts; Kiro has none but every kiro-cli turn prints `▸ Credits: X`. The shim persists each daemon/worker/judge call to a workspace JSONL ledger; `kiro-flow cost` aggregates by model/entrypoint/day (→ USD via `KIRO_FLOW_CREDIT_USD`). Verified live (shim footer → ledger → report). Interactive plane logged via `cost add` |
+| Web UI / agent dashboard | **rebuilt** (local) / **N-A** (hosted) | M15: ruflo's RuVocal web chat + goal.ruv.io dashboard are separate hosted apps with their own non-Kiro model providers (Docker+Mongo) → N-A on a governed Kiro laptop (Kiro itself is the chat frontend). But the telemetry those visualize is all local — `kiro-flow dashboard` renders one self-contained HTML page (agents, cost ledger, hive/swarm, learning, sessions; no network/server/deps). Verified live (rendered in-browser) |
 | Statusline | **dropped** | CC-transcript/status-line-hook dependent; no Kiro equivalent |
 | CC transcript import (auto-memory) | **dropped** | M7: no transcript tree on Kiro; capture flows via hooks + memory_store instead |
 | PreCompact / Notification / Subagent* hooks | **dropped** | M4: no matching Kiro events (5-event surface) |
@@ -89,7 +90,7 @@ injection).
 
 ## Verification ledger (all local, kiro-cli 2.10.0)
 
-- 121 automated tests green across M2–M14 suites
+- 125 automated tests green across M2–M15 suites
 - Live: MCP 350-tool handshake · agent validation via real `kiro-cli agent
   validate` · hook safety block (`rm -rf /` stopped by ruflo's own rule) ·
   headless worker sweep · claude-less work-laptop simulation · hive session
@@ -246,3 +247,36 @@ call and a judge call both wrote credit rows, and `kiro-flow cost` reported them
 by model/entrypoint/day. Pure logic (record/summarize/report) unit-tested in
 `test/cost.test.mjs` (6 tests). This is the one "dropped" capability that had a
 real Kiro-native signal to rebuild on; statusline stays dropped (no equivalent).
+
+## M15 — local dashboard (rebuild of ruflo's hosted UI)
+
+ruflo ships two web UIs — **RuVocal** (a SvelteKit multi-model chat, self-hosted
+via Docker + Mongo, bundled at `node_modules/ruflo/src/chat-ui`) and the
+**goal.ruv.io agent dashboard**. Both are **N-A on a governed Kiro laptop**:
+they drive their *own* model providers (HuggingFace/OpenRouter → Qwen/Gemini/…),
+not Kiro/Bedrock, so running them bypasses Kiro's governed models and billing —
+and Kiro itself already fills the chat-frontend role. (If someone genuinely
+wants RuVocal, it self-hosts standalone *beside* Kiro, not through it.)
+
+What *is* worth rebuilding is the **telemetry view** — and every signal it shows
+is produced locally by the stack we run. `kiro-flow dashboard` (`src/
+dashboard.mjs`) reads them and renders **one self-contained HTML page** —
+inline CSS/JS, theme-aware, responsive, **no network, no server, no Docker, no
+external fonts/scripts** (safe to open on a locked-down machine):
+
+- **overview cards** — agents (core/coordinator counts), plugins enabled, credit
+  spend, memory.db size, hive sessions, kiro sessions + daemon state;
+- **credit spend** — the M14 ledger as by-model / by-entrypoint bars + recent
+  invocations (→ USD when `KIRO_FLOW_CREDIT_USD` is set);
+- **hive / swarm** — sessions, shared-memory keys, consensus, topology;
+- **learning** — routing accuracy, pattern counts, sessions (from
+  `.claude-flow/metrics/learning.json`);
+- **agents** — filterable table (name, model, profile, tool count, delegation
+  roster, role), core/coordinator pills.
+
+`kiro-flow dashboard [--open] [--out <file>] [--json]` → writes
+`.kiro/kiro-flow/dashboard.html`; re-run to refresh (point-in-time snapshot,
+never a live socket). Collector + renderer unit-tested (`test/dashboard.test.mjs`,
+4 tests: reads all signals, empty-workspace degradation, self-containment +
+HTML-escaping of untrusted agent descriptions). Verified live — rendered
+in-browser against a real workspace (76 agents, cost bars, hive/learning panels).
