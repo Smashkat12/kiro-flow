@@ -37,7 +37,9 @@ export const HOOK_ADAPTER_REL = '.kiro/kiro-flow/kiro-hook-adapter.cjs';
 export function buildKfHooks() {
   const run = (...specs) => `node ${HOOK_ADAPTER_REL} ${specs.join(' ')}`;
   return {
-    agentSpawn: [{ command: run('session-restore', 'auto-memory:import') }],
+    // memory-inject first: the recall block must reach context even when the
+    // ruflo handlers are slow; session-bridge records the Kiro session id (M7)
+    agentSpawn: [{ command: run('session-bridge', 'memory-inject', 'session-restore', 'auto-memory:import') }],
     userPromptSubmit: [{ command: run('route') }],
     preToolUse: [
       { matcher: 'execute_bash', command: run('pre-bash') },
@@ -47,7 +49,7 @@ export function buildKfHooks() {
       { matcher: 'fs_write', command: run('post-edit') },
       { matcher: 'execute_bash', command: run('post-bash') },
     ],
-    stop: [{ command: run('session-end', 'auto-memory:sync') }],
+    stop: [{ command: run('session-end', 'auto-memory:sync', 'session-bridge', 'memory-refresh') }],
   };
 }
 

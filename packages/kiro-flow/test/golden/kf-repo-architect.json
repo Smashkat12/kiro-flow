@@ -106,7 +106,7 @@
   "hooks": {
     "agentSpawn": [
       {
-        "command": "node .kiro/kiro-flow/kiro-hook-adapter.cjs session-restore auto-memory:import"
+        "command": "node .kiro/kiro-flow/kiro-hook-adapter.cjs session-bridge memory-inject session-restore auto-memory:import"
       }
     ],
     "userPromptSubmit": [
@@ -136,7 +136,7 @@
     ],
     "stop": [
       {
-        "command": "node .kiro/kiro-flow/kiro-hook-adapter.cjs session-end auto-memory:sync"
+        "command": "node .kiro/kiro-flow/kiro-hook-adapter.cjs session-end auto-memory:sync session-bridge memory-refresh"
       }
     ]
   },

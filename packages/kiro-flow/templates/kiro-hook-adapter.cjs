@@ -6,9 +6,15 @@
  *
  * Usage (in .kiro/agents/*.json hooks):
  *   node .kiro/kiro-flow/kiro-hook-adapter.cjs <spec> [<spec> ...]
- * where <spec> is either
+ * where <spec> is one of
  *   <cmd>              → node .claude/helpers/hook-handler.cjs <cmd>
  *   auto-memory:<cmd>  → node .claude/helpers/auto-memory-hook.mjs <cmd>
+ *   memory-inject      → (built-in, M7) print top-k relevant memories from the
+ *                        recall cache to stdout — Kiro injects it into context
+ *   memory-refresh     → (built-in, M7) detached `ruflo memory export` refresh
+ *                        of the recall cache (never blocks the hook)
+ *   session-bridge     → (built-in, M7) record KIRO_SESSION_ID ↔ workspace
+ *                        session activity in .claude-flow/kiro-flow/kiro-sessions.json
  *
  * Contract (both sides verified empirically, kiro-cli 2.10.0 — dossier 04):
  *   in : Kiro hook JSON on stdin {hook_event_name, cwd, tool_name, tool_input,
@@ -98,6 +104,119 @@ function translate(kiro) {
   return out;
 }
 
+// ── M7 built-ins: ambient memory + session bridge ───────────────────────────
+
+const RECALL_CACHE_REL = ['.claude-flow', 'kiro-flow', 'recall-cache.json'];
+const SESSIONS_REL = ['.claude-flow', 'kiro-flow', 'kiro-sessions.json'];
+const RUFLO_SPEC_DEFAULT = 'ruflo@~3.23.0';
+
+const STOPWORDS = new Set(['the', 'and', 'for', 'with', 'that', 'this', 'from', 'are', 'was', 'were', 'what', 'which', 'did', 'does', 'have', 'has', 'you', 'your', 'our', 'use', 'using', 'into', 'about', 'then', 'than']);
+
+function tokenize(text) {
+  return [...new Set(String(text).toLowerCase().match(/[a-z0-9][a-z0-9_-]{2,}/g) ?? [])]
+    .filter((t) => !STOPWORDS.has(t));
+}
+
+/**
+ * Rank cache entries against the spawn prompt. Cheap lexical scoring — the
+ * point is "surface the obviously relevant decisions/patterns in <10ms",
+ * not to compete with the HNSW search that built the cache.
+ */
+function scoreMemoryEntries(entries, prompt, now = Date.now()) {
+  const promptTokens = tokenize(prompt);
+  const WEEK = 7 * 24 * 3600 * 1000;
+  return entries
+    .map((e) => {
+      const text = `${e.key ?? ''} ${e.value ?? ''} ${e.namespace ?? ''}`;
+      const tokens = new Set(tokenize(text));
+      const overlap = promptTokens.filter((t) => tokens.has(t)).length;
+      let score = promptTokens.length ? overlap / Math.sqrt(promptTokens.length) : 0;
+      if (['decisions', 'patterns', 'solutions'].includes(e.namespace)) score += 0.3;
+      const updated = Number(e.updatedAt ?? e.createdAt ?? 0);
+      if (updated && now - updated < WEEK) score += 0.2;
+      return { entry: e, score, overlap };
+    })
+    // With a prompt, require an actual token match; without one (bare spawn),
+    // fall back to namespace/recency ranking so the block is still useful.
+    .filter((s) => (promptTokens.length ? s.overlap > 0 : s.score > 0))
+    .sort((a, b) => b.score - a.score);
+}
+
+function formatRecallBlock(scored, topK) {
+  if (!scored.length) return '';
+  const lines = scored.slice(0, topK).map(({ entry }) => {
+    const value = String(entry.value ?? '').replace(/\s+/g, ' ').slice(0, 240);
+    return `- [${entry.namespace ?? 'default'}] ${entry.key}: ${value}`;
+  });
+  return `[kiro-flow recall] Relevant memories from earlier sessions (claude-flow memory):\n${lines.join('\n')}\n`;
+}
+
+/** Detached, fail-open recall-cache refresh — the slow CLI never blocks a hook. */
+function refreshRecallCache(cwd, { sync = false } = {}) {
+  const { spawn } = require('node:child_process');
+  const { mkdirSync } = require('node:fs');
+  const cachePath = join(cwd, ...RECALL_CACHE_REL);
+  try { mkdirSync(dirname(cachePath), { recursive: true }); } catch { /* fail-open */ }
+  const spec = process.env.KIRO_FLOW_RUFLO_SPEC || RUFLO_SPEC_DEFAULT;
+  const args = ['-y', spec, 'memory', 'export', '-o', cachePath, '-f', 'json'];
+  if (sync) {
+    const res = spawnSync('npx', args, { cwd, stdio: 'ignore', timeout: 180_000 });
+    return res.status === 0;
+  }
+  try {
+    const child = spawn('npx', args, { cwd, stdio: 'ignore', detached: true });
+    child.unref();
+  } catch { /* fail-open */ }
+  return true;
+}
+
+function builtinMemoryInject(kiro, cwd) {
+  const { readFileSync: read, statSync } = require('node:fs');
+  const cachePath = join(cwd, ...RECALL_CACHE_REL);
+  const ttlMs = Number(process.env.KIRO_FLOW_RECALL_TTL_MS || 15 * 60 * 1000);
+  const topK = Number(process.env.KIRO_FLOW_RECALL_TOPK || 5);
+  let entries = [];
+  let stale = true;
+  try {
+    entries = JSON.parse(read(cachePath, 'utf8')).entries ?? [];
+    stale = Date.now() - statSync(cachePath).mtimeMs > ttlMs;
+  } catch { /* no cache yet */ }
+  if (stale) refreshRecallCache(cwd); // detached; benefits the NEXT spawn
+  if (!entries.length) return { ok: true, stdout: '', stderr: '' };
+  const block = formatRecallBlock(scoreMemoryEntries(entries, kiro.prompt ?? ''), topK);
+  return { ok: true, stdout: block, stderr: '' };
+}
+
+function builtinSessionBridge(kiro, cwd) {
+  const sid = process.env.KIRO_SESSION_ID;
+  if (!sid) return { ok: true, stdout: '', stderr: '' };
+  const { mkdirSync, readFileSync: read, writeFileSync } = require('node:fs');
+  const file = join(cwd, ...SESSIONS_REL);
+  let store = { sessions: {} };
+  try { store = JSON.parse(read(file, 'utf8')); } catch { /* first write */ }
+  const now = new Date().toISOString();
+  const s = store.sessions[sid] ?? { firstSeen: now, cwd };
+  s.lastSeen = now;
+  if (kiro.hook_event_name === 'agentSpawn' && kiro.prompt != null) {
+    s.promptHead = String(kiro.prompt).slice(0, 160);
+  }
+  if (kiro.hook_event_name === 'stop' && kiro.assistant_response != null) {
+    s.lastResponseHead = String(kiro.assistant_response).slice(0, 160);
+  }
+  store.sessions[sid] = s;
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify(store, null, 2) + '\n');
+  } catch { /* fail-open */ }
+  return { ok: true, stdout: '', stderr: '' };
+}
+
+const BUILTINS = {
+  'memory-inject': builtinMemoryInject,
+  'memory-refresh': (kiro, cwd) => { refreshRecallCache(cwd); return { ok: true, stdout: '', stderr: '' }; },
+  'session-bridge': builtinSessionBridge,
+};
+
 // ── handler resolution + dispatch ───────────────────────────────────────────
 
 const HANDLER_FILES = {
@@ -162,7 +281,13 @@ function main() {
   const ccPayload = translate(kiro);
 
   for (const spec of specs) {
-    const res = runSpec(spec, ccPayload, cwd);
+    let res;
+    if (BUILTINS[spec]) {
+      try { res = BUILTINS[spec](kiro, cwd); }
+      catch (e) { res = { ok: true, stdout: '', stderr: `[kiro-flow] builtin ${spec} failed: ${e.message}\n` }; }
+    } else {
+      res = runSpec(spec, ccPayload, cwd);
+    }
     if (res.stdout) process.stdout.write(res.stdout);
     if (!res.ok) {
       // exit 2 = block signal to Kiro; stderr becomes the reason shown to the model
@@ -174,5 +299,9 @@ function main() {
   process.exit(0);
 }
 
-module.exports = { translate, mapTool, mapToolResponse, resolveHelper, EVENT_MAP };
+module.exports = {
+  translate, mapTool, mapToolResponse, resolveHelper, EVENT_MAP,
+  scoreMemoryEntries, formatRecallBlock, tokenize, refreshRecallCache,
+  RECALL_CACHE_REL, SESSIONS_REL,
+};
 if (require.main === module) main();

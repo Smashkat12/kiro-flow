@@ -10,6 +10,7 @@ import { initWorkspace } from '../src/init.mjs';
 import { runDoctor, formatDoctorReport } from '../src/doctor.mjs';
 import { daemonCommand, workerCommand, runRuflo, resolveShimDir } from '../src/daemon.mjs';
 import { hiveSpawnCommand } from '../src/hive.mjs';
+import { sessionListCommand, sessionResumeCommand, memoryRefreshCommand } from '../src/session.mjs';
 
 const USAGE = `kiro-flow — ruflo on AWS Kiro
 
@@ -22,6 +23,9 @@ Usage:
   kiro-flow swarm <args...>            ruflo swarm … (coordination; execution = queen/daemon)
   kiro-flow hive-mind spawn [args...]  hive prompt via ruflo, then kiro-cli chat --agent kf-queen
   kiro-flow hive-mind <sub> [args...]  other hive subcommands pass through to ruflo
+  kiro-flow session list               Kiro chat sessions joined with hook bridge records
+  kiro-flow session resume <id>        kiro-cli chat --resume-id <id> [--agent kf-…]
+  kiro-flow memory refresh             rebuild the recall cache now (hooks do it detached)
   kiro-flow shim-path                  print the shim dir (for manual PATH injection)
 
 Options (init):
@@ -161,6 +165,20 @@ if (cmd === 'convert' && sub === 'agents') {
     process.exit(1);
   }
   process.exit(runRuflo({ dir: resolve(dir), executor, args: ['hive-mind', sub, ...pass] }));
+} else if (cmd === 'session') {
+  const { dir, rest: pass } = splitPassthrough(rest);
+  if (sub === 'list') process.exit(sessionListCommand({ dir: resolve(dir) }));
+  if (sub === 'resume') {
+    const agentIdx = pass.indexOf('--agent');
+    const agent = agentIdx >= 0 ? pass[agentIdx + 1] : undefined;
+    const id = pass.filter((a, i) => a !== '--agent' && i !== agentIdx + 1)[0];
+    process.exit(sessionResumeCommand({ dir: resolve(dir), id, agent }));
+  }
+  console.error('usage: kiro-flow session <list|resume <id>> [--dir <dir>] [--agent kf-…]');
+  process.exit(1);
+} else if (cmd === 'memory' && sub === 'refresh') {
+  const { dir } = splitPassthrough(rest);
+  process.exit(memoryRefreshCommand({ dir: resolve(dir) }));
 } else if (cmd === 'shim-path') {
   console.log(resolveShimDir(resolve(sub === '--dir' ? rest[0] ?? '.' : '.')));
 } else if (cmd === '--help' || cmd === '-h' || cmd === undefined || cmd === 'help') {
