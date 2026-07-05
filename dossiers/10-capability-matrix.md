@@ -102,3 +102,40 @@ The per-dossier lists (01–09) still apply; the M10 additions:
 - [ ] Governance sign-off recap: `--trust-all-tools` in queen/cmd launches,
       third-party npm (`ruflo`) via npx, `~/.kiro/agents` write (kf-judge),
       MIT/NOTICE attribution shipped.
+
+## Deep-dependency parity audit (2026-07-05, post-M10)
+
+Fresh folder outside the repo → `kiro-flow init` → `doctor` (live handshake:
+**ruflo 3.0.0, 350 tools**) → direct JSON-RPC subsystem probes. The npx-cached
+`ruflo` tree carries every heavy dependency, native bindings included:
+
+| Dependency | Version | Status |
+|---|---|---|
+| agentdb | 2.0.0-alpha.3.7 | ✓ (controllers: tieredCache, reasoningBank) |
+| ruvector (HNSW NAPI) | 0.2.33 | ✓ native `.node` loads |
+| @claude-flow/neural | 3.0.0-alpha.9 | ✓ |
+| @claude-flow/memory | 3.0.0-alpha.21 | ✓ |
+| onnxruntime-node | 1.14.0 | ✓ |
+| @xenova/transformers | 2.17.2 | ✓ (Xenova/all-MiniLM-L6-v2) |
+| better-sqlite3 | 11.10.0 | ✓ native |
+| sql.js | 1.14.1 | ✓ (WASM fallback) |
+
+Live subsystem probes (all PASS): `memory_store`/`memory_search` semantic
+recall (paraphrase query ranked the right entry first), `memory_search_unified`
+(agentdb + claude-memory bridge — `memory_bridge_status`: 68 files/7 projects),
+`agentdb_health`/`_controllers`/`_pattern-store`/`_pattern-search`,
+`neural_patterns`, `hive-mind_status`, and `embeddings_generate` → **384-dim
+vectors from the real ONNX model**.
+
+**One operational gotcha (not a defect):** `embeddings_generate` returns
+"Embeddings not initialized. Run embeddings/init first." until
+`embeddings_init` is called once per fresh `.swarm/memory.db`. `memory_search`
+does NOT need it (it lazy-inits its own HNSW+sql.js path — verified returning
+results with `backend: "HNSW + sql.js"`), so ambient recall works out of the
+box; only the standalone `embeddings_*` tools need the one-time init. After
+init: `{model: Xenova/all-MiniLM-L6-v2, dimension: 384, hyperbolic: enabled,
+neural: enabled}`.
+
+**Verdict: full ruflo internals run on Kiro.** The MCP server is the real
+3.23 engine with agentdb + ruvector-HNSW + ONNX embeddings live, not a
+tool-name stub. Parity confirmed.
