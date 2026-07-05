@@ -188,4 +188,22 @@ that validate". All verified live on kiro-cli 2.10.0.
   by kiro-cli 2.10.0 ("not valid under anyOf") — schema corrected; it is not a
   CLI capability whatever the IDE may expose.
 
-Deferred (lower value): `toolAliases`, `keyboardShortcut`/`welcomeMessage`.
+### Flagship UX fields (M11 leftovers)
+
+Probed the last three agent fields on kiro-cli 2.10.0:
+
+- **`welcomeMessage`** — WORKS (prints on chat start, even `--no-interactive`).
+  Added to the three interactive flagships (kf-orchestrator/queen/
+  deep-researcher) as an orientation line. Deliberately **not** on kf-judge or
+  library agents: they can run headless/as subagents, where a welcome would
+  corrupt the shim's parsed output.
+- **`keyboardShortcut`** — validates; IDE-only quick-launch (ctrl+alt+o/q/r on
+  the flagships). Unverifiable from the CLI → work-side checklist item (may
+  collide with IDE bindings; one-field edit if so).
+- **`toolAliases`** — accepted but **no observable effect** (tested alias→real,
+  real→alias, alias-in-`tools[]`; none renamed or resolved a tool — same as a
+  bogus name). Emitted by nothing; documented in the schema as IDE-unverified,
+  like `knowledgeBase`.
+
+M11 native-agent enrichment is complete: #1 delegation, #2 native tools, #3
+model routing, resources/skills surface, and flagship UX.

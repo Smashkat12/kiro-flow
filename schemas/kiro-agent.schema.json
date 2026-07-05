@@ -29,7 +29,8 @@
     },
     "toolAliases": {
       "type": "object",
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": { "type": "string" },
+      "description": "Accepted but NO observable effect on kiro-cli 2.10.0 (tested alias→real, real→alias, and alias-in-tools[] — none renamed or resolved a tool). kiro-flow emits none; treat as IDE-unverified."
     },
     "allowedTools": {
       "type": "array",
