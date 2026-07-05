@@ -145,6 +145,14 @@ kiro-cli chat --agent kf-orchestrator
 #   Prompt: "Fan out: have kf-planner draft a 3-step plan for X and store it in memory."
 #   Expect: subagent call → kf-planner, then @claude-flow/memory_store.
 npx -y ruflo memory search "plan"      # row persisted in .swarm/memory.db
+
+# Credit spend (M14) — the shim logs every daemon/worker/judge kiro-cli call to
+# .kiro/kiro-flow/cost-ledger.jsonl; report it any time:
+kiro-flow cost                         # total + by model / entrypoint / day
+KIRO_FLOW_CREDIT_USD=<usd-per-credit> kiro-flow cost   # adds a $ column
+kiro-flow cost --since 7               # trailing 7-day window (--json for scripting)
+#   Interactive `kiro-cli chat` shows its `▸ Credits:` footer live but isn't
+#   auto-captured; log it with:  kiro-flow cost add <credits> [--model m --note n]
 ```
 
 > **Cost of `skills add --all`:** every `.kiro/skills/*/SKILL.md` auto-loads
