@@ -30,7 +30,7 @@ import {
   DEFAULT_PROFILES, DEFAULT_TOOLS_DATA, HOOK_ADAPTER_REL,
 } from './convert/agents.mjs';
 import {
-  CORE_AGENT_PREFERENCE, CORE_TARGET, DEFAULT_MODEL_MAP, nativeToolsFor,
+  CORE_AGENT_PREFERENCE, CORE_TARGET, DEFAULT_MODEL_MAP, nativeToolsFor, flagshipModel,
 } from './convert/tool-map.mjs';
 import { syncBinShim } from './daemon.mjs';
 
@@ -87,7 +87,7 @@ export function resolveModelMap(dir) {
  * references agents that actually exist in this workspace. Falls back to the
  * first CORE_TARGET preference names when no manifest is available.
  */
-export function buildOrchestratorAgent(coreKfNames, model = DEFAULT_MODEL_MAP.strong) {
+export function buildOrchestratorAgent(coreKfNames, model = flagshipModel()) {
   const liveCfTools = new Set(JSON.parse(readFileSync(DEFAULT_TOOLS_DATA, 'utf8')));
   const profiles = JSON.parse(readFileSync(DEFAULT_PROFILES, 'utf8'));
   const cfRefs = expandProfile(profiles.core, liveCfTools).map((t) => `@claude-flow/${t}`);
@@ -116,7 +116,7 @@ export function buildOrchestratorAgent(coreKfNames, model = DEFAULT_MODEL_MAP.st
  * orchestrator, but with the queen persona and the hive/consensus toolset;
  * `kiro-flow hive-mind spawn` launches kiro-cli chat with this agent.
  */
-export function buildQueenAgent(coreKfNames, model = DEFAULT_MODEL_MAP.strong) {
+export function buildQueenAgent(coreKfNames, model = flagshipModel()) {
   const liveCfTools = new Set(JSON.parse(readFileSync(DEFAULT_TOOLS_DATA, 'utf8')));
   const profiles = JSON.parse(readFileSync(DEFAULT_PROFILES, 'utf8'));
   const cfNames = expandProfile(profiles.core, liveCfTools);
@@ -150,7 +150,7 @@ export function buildQueenAgent(coreKfNames, model = DEFAULT_MODEL_MAP.strong) {
  * web_fetch + the researcher tool profile; produces cited reports and
  * persists findings via memory_store.
  */
-export function buildDeepResearcherAgent(model = DEFAULT_MODEL_MAP.strong) {
+export function buildDeepResearcherAgent(model = flagshipModel()) {
   const liveCfTools = new Set(JSON.parse(readFileSync(DEFAULT_TOOLS_DATA, 'utf8')));
   const profiles = JSON.parse(readFileSync(DEFAULT_PROFILES, 'utf8'));
   const cfNames = expandProfile(profiles.researcher, liveCfTools);
@@ -286,14 +286,15 @@ export function initWorkspace({ dir, force = false, skipRufloInit = false, clean
   // spawns in an empty temp cwd where workspace agents are invisible (M8). The
   // judge is a verifier → strong tier, routed through the same model map.
   const judge = JSON.parse(readFileSync(join(pkgRoot, 'templates', 'agents', 'kf-judge.json'), 'utf8'));
-  if (modelMap.strong) judge.model = modelMap.strong; else delete judge.model;
+  const judgeModel = flagshipModel(modelMap);
+  if (judgeModel) judge.model = judgeModel; else delete judge.model;
   step('~/.kiro/agents/kf-judge.json (global)', writeIfChanged(join(homedir(), '.kiro', 'agents', 'kf-judge.json'), JSON.stringify(judge, null, 2) + '\n'));
 
   // 8. orchestrator + queen agents
   for (const [name, agent] of [
-    ['kf-orchestrator', buildOrchestratorAgent(coreKfNames, modelMap.strong)],
-    ['kf-queen', buildQueenAgent(coreKfNames, modelMap.strong)],
-    ['kf-deep-researcher', buildDeepResearcherAgent(modelMap.strong)],
+    ['kf-orchestrator', buildOrchestratorAgent(coreKfNames, flagshipModel(modelMap))],
+    ['kf-queen', buildQueenAgent(coreKfNames, flagshipModel(modelMap))],
+    ['kf-deep-researcher', buildDeepResearcherAgent(flagshipModel(modelMap))],
   ]) {
     step(`.kiro/agents/${name}.json`, writeIfChanged(
       join(dir, '.kiro', 'agents', `${name}.json`),

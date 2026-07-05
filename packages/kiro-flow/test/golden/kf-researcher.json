@@ -3,7 +3,7 @@
   "name": "kf-researcher",
   "description": "Deep research and information gathering specialist",
   "prompt": "file://./prompts/kf-researcher.md",
-  "model": "claude-sonnet-4.5",
+  "model": "claude-sonnet-4.6",
   "tools": [
     "read",
     "shell",

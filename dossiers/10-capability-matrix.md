@@ -148,11 +148,15 @@ that validate". All verified live on kiro-cli 2.10.0.
 - **#2 native tool budgets** — every kf-* agent gets Kiro-native read-only
   tools per role (`grep`/`glob`/`todo`/`thinking`, +`knowledge` for
   researcher/neural), all pre-trusted in `allowedTools`.
-- **#3 per-agent model routing** — core/researcher/neural + flagships →
-  `claude-sonnet-4.5`, the rest inherit `auto`; tiers resolved through an
-  overridable `.kiro/kiro-flow/model-map.json` (one file to edit for the
-  employer's Bedrock IDs). `doctor` warns on a pinned model absent from
-  `kiro-cli chat --list-models`.
+- **#3 per-agent model routing** — two capability tiers on the employer Kiro's
+  real ids (`kiro-cli chat --list-models`, 2026-07): the reasoning-critical
+  **flagships** (kf-judge/queen/orchestrator/deep-researcher) → **opus tier**
+  `claude-opus-4.8`; the broad **library** core/researcher/neural → **strong**
+  `claude-sonnet-4.6`; everyone else inherits `auto`. Tiers resolve through an
+  overridable `.kiro/kiro-flow/model-map.json` — one file to re-point on a
+  machine with different ids (e.g. the home free tier, which lacks
+  opus-4.8/sonnet-4.6). `doctor` warns on a pinned model absent from
+  `--list-models`.
 - **#1 native subagent delegation** — 14 coordinators (core profile AND a
   coordinator/orchestrator/manager/queen name) emit `subagent` +
   `toolsSettings.subagent.{availableAgents,trustedAgents}` = the workspace core

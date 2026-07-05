@@ -9,8 +9,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Ajv2020 } from 'ajv/dist/2020.js';
-import { initWorkspace, buildOrchestratorAgent } from '../src/init.mjs';
+import { initWorkspace, buildOrchestratorAgent, buildQueenAgent } from '../src/init.mjs';
 import { runDoctor } from '../src/doctor.mjs';
+import { DEFAULT_MODEL_MAP } from '../src/convert/tool-map.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SCHEMA = join(here, '..', '..', '..', 'schemas', 'kiro-agent.schema.json');
@@ -98,6 +99,14 @@ test('orchestrator agent validates against the Kiro schema and trusts the core 1
   assert.equal(agent.toolsSettings.subagent.availableAgents.length, 12);
   assert.ok(agent.toolsSettings.subagent.availableAgents.every((a) => a.startsWith('kf-')));
   assert.ok(agent.tools.includes('subagent'));
+});
+
+test('flagship agents (orchestrator/queen) route to the opus tier', () => {
+  assert.equal(DEFAULT_MODEL_MAP.opus, 'claude-opus-4.8');
+  assert.equal(buildOrchestratorAgent(['kf-coder']).model, DEFAULT_MODEL_MAP.opus);
+  assert.equal(buildQueenAgent(['kf-coder']).model, DEFAULT_MODEL_MAP.opus);
+  // a custom map re-routes the flagship model too
+  assert.equal(buildOrchestratorAgent(['kf-coder'], 'claude-opus-4.6').model, 'claude-opus-4.6');
 });
 
 test('orchestrator only registers agents that exist in the workspace', () => {

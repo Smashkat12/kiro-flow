@@ -125,17 +125,33 @@ export const MODEL_TIER_BY_NAME = {
   reviewer: 'strong',
 };
 
-/** Default tier → concrete model id. Verified on kiro-cli 2.10.0 home (`chat --list-models`). */
+/**
+ * Default tier → concrete model id, set to the EMPLOYER Kiro's ids (the deploy
+ * target) from `kiro-cli chat --list-models` (2026-07): opus 4.5–4.8, sonnet
+ * 4/4.5/4.6, haiku 4.5, minimax. The `opus` tier is reserved for the
+ * reasoning-critical flagship planes (judge/queen/orchestrator/deep-researcher,
+ * wired in init.mjs); the broad library uses `strong` = latest Sonnet.
+ *
+ * The home free tier does NOT carry opus-4.8 / sonnet-4.6 — override via
+ * `.kiro/kiro-flow/model-map.json` there (`kiro-flow doctor` flags a pinned id
+ * that `--list-models` doesn't offer).
+ */
 export const DEFAULT_MODEL_MAP = {
-  strong: 'claude-sonnet-4.5',
+  opus: 'claude-opus-4.8', // heaviest reasoning: flagship coordination + the judge
+  strong: 'claude-sonnet-4.6', // capable default for library coordinators/researchers/neural
   balanced: null, // omit the field → inherit the session / `auto` model
-  fast: 'claude-haiku-4.5',
+  fast: 'claude-haiku-4.5', // cheap/fast for mechanical roles
 };
 
 /** Resolve the concrete model id for an agent, or null to leave the field off. */
 export function modelFor(name, profileKey, modelMap = DEFAULT_MODEL_MAP) {
   const tier = MODEL_TIER_BY_NAME[name] ?? MODEL_TIER_BY_PROFILE[profileKey] ?? 'balanced';
   return modelMap[tier] ?? null;
+}
+
+/** The model id for the reasoning-critical flagship agents (opus tier, with fallbacks). */
+export function flagshipModel(modelMap = DEFAULT_MODEL_MAP) {
+  return modelMap.opus ?? modelMap.strong ?? null;
 }
 
 /**

@@ -14,7 +14,7 @@ import { parseModels } from '../src/doctor.mjs';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import {
   NATIVE_TOOLS, NATIVE_TOOLS_BY_PROFILE, nativeToolsFor,
-  DEFAULT_MODEL_MAP, MODEL_TIER_BY_PROFILE, modelFor, isCoordinator,
+  DEFAULT_MODEL_MAP, MODEL_TIER_BY_PROFILE, modelFor, isCoordinator, flagshipModel,
 } from '../src/convert/tool-map.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -51,6 +51,16 @@ test('modelFor: profile tiers resolve through the default map', () => {
   for (const [profile, tier] of Object.entries(MODEL_TIER_BY_PROFILE)) {
     assert.equal(modelFor('x', profile), tier === 'balanced' ? null : DEFAULT_MODEL_MAP[tier]);
   }
+});
+
+test('flagshipModel: opus tier for reasoning-critical planes, with fallbacks', () => {
+  assert.equal(flagshipModel(), DEFAULT_MODEL_MAP.opus);
+  assert.equal(flagshipModel(), 'claude-opus-4.8');
+  assert.equal(flagshipModel({ strong: 'x' }), 'x', 'no opus → fall back to strong');
+  assert.equal(flagshipModel({ balanced: null }), null, 'neither → null (omit)');
+  // library strong stays sonnet, distinct from the flagship opus tier
+  assert.equal(DEFAULT_MODEL_MAP.strong, 'claude-sonnet-4.6');
+  assert.notEqual(flagshipModel(), DEFAULT_MODEL_MAP.strong);
 });
 
 test('modelFor: a workspace override map re-routes tiers', () => {

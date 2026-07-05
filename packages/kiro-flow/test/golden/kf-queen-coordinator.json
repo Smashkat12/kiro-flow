@@ -3,7 +3,7 @@
   "name": "kf-queen-coordinator",
   "description": "The sovereign orchestrator of hierarchical hive operations, managing strategic decisions, resource allocation, and maintaining hive coherence through centralized-decentralized hybrid control",
   "prompt": "file://./prompts/kf-queen-coordinator.md",
-  "model": "claude-sonnet-4.5",
+  "model": "claude-sonnet-4.6",
   "tools": [
     "read",
     "shell",
