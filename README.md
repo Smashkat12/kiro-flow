@@ -2,6 +2,38 @@
 
 Recreates [ruflo](https://github.com/ruvnet/ruflo) (claude-flow) for **AWS Kiro** — Kiro CLI + Kiro IDE — instead of Claude Code.
 
+## Architecture
+
+How a request actually flows (verified against the shipping 3.23 source, not the marketing shape):
+
+```mermaid
+flowchart TB
+    U(["User"]) --> CLI["kiro-cli / Kiro IDE"]
+    CLI --> AG["kf-* Agent<br/>orchestrator · queen · researcher · 70+ specialists"]
+    AG <-->|runs on| LLM[["Kiro model — Bedrock<br/>Claude · DeepSeek · GLM · Qwen · …"]]
+
+    AG -->|coordination| MCP["claude-flow MCP server<br/>350 tools — the coordination brain"]
+    AG -->|execution| NAT["native Kiro tools<br/>read · write · shell · subagent · web"]
+    NAT -.->|subagent fan-out| AG
+
+    MCP --> MEM[("Vector memory<br/>.swarm/memory.db · HNSW + ONNX")]
+    MCP --> STATE[("Swarm / hive state<br/>+ consensus: raft · byzantine")]
+    MCP --> ADB[("agentdb · neural patterns")]
+
+    MEM -.->|top-k injected at spawn| AG
+
+    subgraph LOOP ["Learning loop — driven by hooks (5 events)"]
+      direction LR
+      REC["record outcomes<br/>post-edit / post-task"] --> CON["session-end consolidate<br/>PageRank → ranked-context"]
+    end
+    AG -.->|hooks wrap every step| REC
+    CON -.->|inject on next prompt| MEM
+
+    WORK["Background workers / daemon"] -.->|headless via kiro-claude-shim| LLM
+```
+
+**Reading the diagram:** the agent runs on **Kiro's** model (ruflo's own provider layer is unused on this plane); the **claude-flow MCP server** is its coordination brain (memory, swarm/hive state, agentdb); **memory** is read at spawn (injected) and written by tools/hooks — it wraps the LLM call rather than sitting in series with it; **swarm/hive state** is a shared store with real consensus math, *beside* execution, not a stage the request passes through; and the **learning loop** (record → consolidate → inject) is a genuine closed feedback cycle, though lexical (trigram + PageRank) rather than the neural vocabulary the branding implies.
+
 ## Approach
 
 Adapter, not fork. The published `ruflo` npm package's genuinely host-agnostic engine is consumed unmodified:
