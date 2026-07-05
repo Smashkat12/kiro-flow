@@ -1,0 +1,98 @@
+# 11 — Per-plugin audit: what the 35 marketplace plugins map to on Kiro
+
+**Question:** does kiro-flow have the capabilities of the "All 35 plugins"
+section on the ruflo README? **Short answer: about half are already live in the
+core MCP we run; ~8 more are agent/command/skill packs convertible on demand;
+~4 are external vertical runtimes we don't ship; ~3 are N-A/dropped on Kiro.**
+
+## Method
+
+- **Tools:** counted, per capability, how many tools exist in the **registered
+  350-tool claude-flow MCP server** (`dossiers/tool-inventory.json`). "IN-CORE
+  N" = N tools with that prefix are actually served to Kiro.
+- **Ships:** each plugin's `agents/ commands/ skills/` counts
+  (`plugins/<name>/`). These port via `kiro-flow convert agents --source`,
+  `kiro-flow cmd`, `kiro-flow skills` respectively.
+- **External:** whether the plugin delegates to a **separate npm runtime**
+  (e.g. `npx neural-trader`) that is *not* part of the claude-flow server.
+- No plugin declares its own `mcpServers` in `plugin.json`; the core plugin
+  (`ruflo-core`) registers the one shared 300+/350-tool server that folds most
+  plugin tools into it.
+
+**Caveat:** "IN-CORE N" means the tools are *present in the registered set*.
+Live end-to-end invocation was verified in the M1/parity/M-series work for
+memory/agentdb/ruvector/embeddings/neural/hive/swarm/testgen/analyze; the other
+in-core counts (browser, metaharness, daa, aidefence, workflow, ruvllm,
+federation, observability) are asserted from the served tool list, not each
+individually driven.
+
+## The matrix
+
+Legend — **core**: tools live in our 350 (+engine verified where noted) ·
+**port**: no dedicated tools, delivered as agents/commands/skills → convert on
+demand · **external**: needs a separate npm runtime we don't ship ·
+**N-A**: no meaningful Kiro equivalent.
+
+| Plugin | Core tools | Ships (a/c/s) | Verdict |
+|---|---|---|---|
+| ruflo-core | the 350-tool server itself | 4/2/4 | **core** — this *is* what kiro-flow registers |
+| ruflo-swarm | swarm | 2/2/2 | **core** — M6 live (hive state mutated) |
+| ruflo-autopilot | autopilot | 1/2/2 | **core** (tools present) |
+| ruflo-loop-workers | via daemon/triggers | 1/2/2 | **core** — M5 daemon |
+| ruflo-workflows | workflow ×12 | 3/8/5 | **core** |
+| ruflo-federation | federation ×4 | 1/1/3 | **core/partial** — cross-machine = verify-at-work |
+| ruflo-agentdb | agentdb ×20 | 1/2/2 | **core** — parity audit live |
+| ruflo-rag-memory | memory + embeddings | 1/2/2 | **core** — memory_search_unified (M7) |
+| ruflo-rvf | session ×… | 1/1/2 | **core** — session persistence (M7) |
+| ruflo-ruvector | embeddings ×10, ruvector ×3 | 1/1/4 | **core/partial** — HNSW live; standalone `npx ruvector` is extra |
+| ruflo-knowledge-graph | (0 dedicated) | 1/1/2 | **port** — agents/cmds/skills; some graph in `memory` |
+| ruflo-intelligence | neural ×6 | 1/2/3 | **core** — M8 learning loop |
+| ruflo-graph-intelligence | (PageRank in loop) | 0/0/0 | **partial** — used internally; no standalone tools |
+| ruflo-daa | daa ×8 | 1/1/2 | **core** (tools present) |
+| ruflo-ruvllm | ruvllm ×10 | 1/1/2 | **N-A** — local-LLM serving; moot when Kiro *is* the model provider |
+| ruflo-goals | (0 goal_ tools) | 4/1/5 | **port** — goal-planner agents (in base library) |
+| ruflo-testgen | via daemon | 1/1/3 | **core** — M5 live testgaps sweep |
+| ruflo-browser | browser ×29 | 1/1/10 | **core/partial** — tools present; Kiro also has its own browser surface |
+| ruflo-jujutsu | analyze ×… | 1/1/2 | **core** — analyze_diff family |
+| ruflo-docs | (0 dedicated) | 1/1/2 | **port** — agents/cmds/skills |
+| ruflo-security-audit | (0 dedicated) | 1/1/2 | **port** — agents/cmds/skills |
+| ruflo-aidefence | aidefence ×7 | 1/1/2 | **core** (tools present) |
+| ruflo-adr | (0 dedicated) | 1/1/4 | **port** |
+| ruflo-ddd | (0 dedicated) | 1/1/3 | **port** |
+| ruflo-sparc | (methodology) | 1/1/3 | **core** — via `cmd` + the sparc skill |
+| ruflo-metaharness | metaharness ×15 | 1/1/13 | **core** (tools present) |
+| ruflo-arena | (own src/mcp-tools, not in 350) | 0/1/0 | **external/port** — competitive ruliology; niche |
+| ruflo-migrations | migrat ×1 | 1/1/2 | **partial/port** — thin tool + agent/cmds |
+| ruflo-observability | observ ×6 | 1/1/2 | **core** (tools present) |
+| ruflo-cost-tracker | (needs CC transcript) | 1/1/20 | **N-A/dropped** — no Kiro transcript (capability matrix) |
+| ruflo-agent | agent/managed/wasm | 9/2/4 | **partial/N-A** — WASM worker plane ≈ ours; "Managed Agents" = Claude API, N-A |
+| ruflo-plugin-creator | (meta scaffolding) | 1/1/2 | **port** — low relevance on Kiro |
+| ruflo-iot-cognitum | (0 iot tools) | 4/1/5 | **external** — IoT runtime not shipped |
+| ruflo-neural-trader | (0 in core; `npx neural-trader` ×112) | 4/1/9 | **external** — separate trading package |
+| ruflo-market-data | (0 in core) | 1/1/2 | **external** — separate market-feed runtime |
+
+## Tally
+
+- **core (tools live in our 350, ~half verified live):** ~18 — core, swarm,
+  autopilot, loop-workers, workflows, agentdb, rag-memory, rvf, ruvector,
+  intelligence, daa, testgen, browser, jujutsu, aidefence, metaharness,
+  observability, sparc (+ federation partial).
+- **port (agents/commands/skills, convert on demand, no separate tools):** ~8 —
+  knowledge-graph, goals, docs, security-audit, adr, ddd, plugin-creator,
+  graph-intelligence/migrations (partial).
+- **external (separate npm vertical runtime, not shipped):** ~4 —
+  neural-trader, market-data, iot-cognitum, arena.
+- **N-A / dropped on Kiro:** ~3 — cost-tracker (CC transcript), ruvllm
+  (local LLM), ruflo-agent's Managed-Agents mode (Claude API).
+
+## What this means
+
+The core MCP server kiro-flow runs is a genuine **superset** that already
+serves the tools behind roughly half the plugins. The "port" tier needs no new
+engine — just `kiro-flow convert agents --source plugins/<name>/agents`,
+`kiro-flow skills add`, and `kiro-flow cmd`. The only real *gaps* are the
+domain verticals (trading, IoT, market data, arena), which ride separate npm
+packages, and the handful that are structurally N-A on Kiro.
+
+**To port any "port"-tier plugin properly** (agents + its skills + verify its
+commands run): name it and it's a scoped, repeatable job.
