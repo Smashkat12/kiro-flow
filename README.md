@@ -41,7 +41,10 @@ The thin `kiro-flow` package adds what Kiro needs:
 - [x] M7 — ambient memory + session persistence (recall cache + agentSpawn injection; A→B recall verified live, dossier 07)
 - [x] M8 — self-learning / ReasoningBank (fail→consolidate→inject loop verified live; kf-judge global + shim routing, dossier 08)
 - [x] M9 — deep research + command triage (kf-deep-researcher: live cited report + memory_store; kiro-flow cmd runner over 166 commands, dossier 09)
-- [ ] M10 — Powers packaging + distribution
+- [x] M10 — Powers packaging + distribution (powers/kiro-flow bundle, clean-machine install, final capability matrix — dossier 10)
+
+All 10 milestones complete (home side). Final capability matrix: `dossiers/10-capability-matrix.md`.
+Work-side (employer Kiro) checklists live at the end of each dossier.
 
 Full plan: see `docs/plan.md`.
 

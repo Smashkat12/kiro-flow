@@ -12,6 +12,7 @@ import { daemonCommand, workerCommand, runRuflo, resolveShimDir } from '../src/d
 import { hiveSpawnCommand } from '../src/hive.mjs';
 import { sessionListCommand, sessionResumeCommand, memoryRefreshCommand } from '../src/session.mjs';
 import { cmdCommand } from '../src/cmd.mjs';
+import { powerPackCommand } from '../src/power.mjs';
 
 const USAGE = `kiro-flow — ruflo on AWS Kiro
 
@@ -29,6 +30,7 @@ Usage:
   kiro-flow session list               Kiro chat sessions joined with hook bridge records
   kiro-flow session resume <id>        kiro-cli chat --resume-id <id> [--agent kf-…]
   kiro-flow memory refresh             rebuild the recall cache now (hooks do it detached)
+  kiro-flow power pack [--out <dir>]   assemble the team-distributable Kiro Power bundle
   kiro-flow shim-path                  print the shim dir (for manual PATH injection)
 
 Options (init):
@@ -201,6 +203,10 @@ if (cmd === 'convert' && sub === 'agents') {
 } else if (cmd === 'memory' && sub === 'refresh') {
   const { dir } = splitPassthrough(rest);
   process.exit(memoryRefreshCommand({ dir: resolve(dir) }));
+} else if (cmd === 'power' && sub === 'pack') {
+  const outIdx = rest.indexOf('--out');
+  const out = outIdx >= 0 ? rest[outIdx + 1] : 'powers/kiro-flow';
+  process.exit(powerPackCommand({ out: resolve(out) }));
 } else if (cmd === 'shim-path') {
   console.log(resolveShimDir(resolve(sub === '--dir' ? rest[0] ?? '.' : '.')));
 } else if (cmd === '--help' || cmd === '-h' || cmd === undefined || cmd === 'help') {
