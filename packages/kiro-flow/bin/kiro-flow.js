@@ -8,7 +8,8 @@ import { resolve } from 'node:path';
 import { convertAgents } from '../src/convert/agents.mjs';
 import { initWorkspace } from '../src/init.mjs';
 import { runDoctor, formatDoctorReport } from '../src/doctor.mjs';
-import { daemonCommand, workerCommand, resolveShimDir } from '../src/daemon.mjs';
+import { daemonCommand, workerCommand, runRuflo, resolveShimDir } from '../src/daemon.mjs';
+import { hiveSpawnCommand } from '../src/hive.mjs';
 
 const USAGE = `kiro-flow — ruflo on AWS Kiro
 
@@ -18,6 +19,9 @@ Usage:
   kiro-flow doctor [options]           readiness checks (node, kiro-cli, MCP, agents)
   kiro-flow daemon <sub> [args...]     ruflo daemon with the kiro-claude-shim on PATH
   kiro-flow worker <args...>           ruflo hooks worker … with the shim on PATH
+  kiro-flow swarm <args...>            ruflo swarm … (coordination; execution = queen/daemon)
+  kiro-flow hive-mind spawn [args...]  hive prompt via ruflo, then kiro-cli chat --agent kf-queen
+  kiro-flow hive-mind <sub> [args...]  other hive subcommands pass through to ruflo
   kiro-flow shim-path                  print the shim dir (for manual PATH injection)
 
 Options (init):
@@ -135,6 +139,28 @@ if (cmd === 'convert' && sub === 'agents') {
 } else if (cmd === 'worker') {
   const { dir, executor, rest: pass } = splitPassthrough([sub, ...rest].filter((a) => a !== undefined));
   process.exit(workerCommand({ dir: resolve(dir), executor, rest: pass }));
+} else if (cmd === 'swarm') {
+  const { dir, executor, rest: pass } = splitPassthrough([sub, ...rest].filter((a) => a !== undefined));
+  const code = runRuflo({ dir: resolve(dir), executor, args: ['swarm', ...pass] });
+  if (pass[0] === 'start' || pass[0] === 'init') {
+    console.log('\nkiro-flow: swarm state is coordination-only. Execute via:');
+    console.log('  kiro-flow hive-mind spawn -o "<objective>"     (interactive queen session)');
+    console.log('  kiro-cli chat --agent kf-orchestrator          (interactive fan-out)');
+    console.log('  kiro-flow daemon start                         (background workers)');
+  }
+  process.exit(code);
+} else if (cmd === 'hive-mind') {
+  const { dir, executor, rest: pass } = splitPassthrough(rest);
+  if (sub === 'spawn') {
+    const noInteractive = pass.includes('--no-interactive');
+    const upstream = pass.filter((a) => a !== '--no-interactive');
+    process.exit(hiveSpawnCommand({ dir: resolve(dir), executor, rest: upstream, noInteractive }));
+  }
+  if (!sub) {
+    console.error('usage: kiro-flow hive-mind <spawn|init|status|task|consensus|...> [args...]');
+    process.exit(1);
+  }
+  process.exit(runRuflo({ dir: resolve(dir), executor, args: ['hive-mind', sub, ...pass] }));
 } else if (cmd === 'shim-path') {
   console.log(resolveShimDir(resolve(sub === '--dir' ? rest[0] ?? '.' : '.')));
 } else if (cmd === '--help' || cmd === '-h' || cmd === undefined || cmd === 'help') {

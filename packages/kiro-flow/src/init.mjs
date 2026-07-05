@@ -11,7 +11,7 @@
  *   5. hook adapter .kiro/kiro-flow/kiro-hook-adapter.cjs (M4 — every generated
  *      agent's hooks delegate through it to ruflo's .claude/helpers kernel)
  *   6. kiro-claude-shim .kiro/kiro-flow/shim/claude (M5 — headless worker plane)
- *   7. kf-orchestrator agent (subagent fan-out to the core 12)
+ *   7. kf-orchestrator + kf-queen agents (subagent fan-out / hive-mind plane)
  *
  * Every write is compare-before-write, so a second run is a zero-diff no-op.
  */
@@ -72,6 +72,38 @@ export function buildOrchestratorAgent(coreKfNames) {
     name: 'kf-orchestrator',
     description: 'ruflo orchestrator for Kiro — coordinates the kf-* agent library via subagent fan-out and claude-flow swarm/memory tools',
     prompt: 'file://./prompts/kf-orchestrator.md',
+    tools: ['read', 'write', 'shell', 'subagent', ...cfRefs],
+    allowedTools: ['read', ...cfRefs],
+    toolsSettings: {
+      subagent: { availableAgents: kfCore, trustedAgents: kfCore },
+    },
+    hooks: buildKfHooks(),
+    includeMcpJson: true,
+  };
+}
+
+/**
+ * kf-queen — the hive-mind interactive plane (M6). Same shape as the
+ * orchestrator, but with the queen persona and the hive/consensus toolset;
+ * `kiro-flow hive-mind spawn` launches kiro-cli chat with this agent.
+ */
+export function buildQueenAgent(coreKfNames) {
+  const liveCfTools = new Set(JSON.parse(readFileSync(DEFAULT_TOOLS_DATA, 'utf8')));
+  const profiles = JSON.parse(readFileSync(DEFAULT_PROFILES, 'utf8'));
+  const cfNames = expandProfile(profiles.core, liveCfTools);
+  // the generated hive briefing also references these beyond the core profile
+  for (const extra of ['neural_patterns', 'neural_train', 'workflow_create', 'hooks_intelligence_pattern-store']) {
+    if (liveCfTools.has(extra) && !cfNames.includes(extra)) cfNames.push(extra);
+  }
+  const cfRefs = cfNames.sort().map((t) => `@claude-flow/${t}`);
+  const kfCore = coreKfNames?.length
+    ? [...coreKfNames].sort()
+    : CORE_AGENT_PREFERENCE.slice(0, CORE_TARGET).map((n) => `kf-${n}`);
+  return {
+    $schema: 'https://github.com/smashkat12/kiro-flow/schemas/kiro-agent.schema.json',
+    name: 'kf-queen',
+    description: 'ruflo hive-mind queen for Kiro — consensus-led swarm coordination via claude-flow hive tools, execution via subagent fan-out',
+    prompt: 'file://./prompts/kf-queen.md',
     tools: ['read', 'write', 'shell', 'subagent', ...cfRefs],
     allowedTools: ['read', ...cfRefs],
     toolsSettings: {
@@ -160,17 +192,21 @@ export function initWorkspace({ dir, force = false, skipRufloInit = false }) {
   syncBinShim(dir, 'kiro');
   step('node_modules/.bin/claude → shim', 'ok');
 
-  // 7. orchestrator agent
-  const orchestrator = buildOrchestratorAgent(coreKfNames);
-  step('.kiro/agents/kf-orchestrator.json', writeIfChanged(
-    join(dir, '.kiro', 'agents', 'kf-orchestrator.json'),
-    JSON.stringify(orchestrator, null, 2) + '\n',
-  ));
-  const orchestratorPrompt = readFileSync(join(pkgRoot, 'templates', 'prompts', 'kf-orchestrator.md'), 'utf8');
-  step('.kiro/agents/prompts/kf-orchestrator.md', writeIfChanged(
-    join(dir, '.kiro', 'agents', 'prompts', 'kf-orchestrator.md'),
-    orchestratorPrompt,
-  ));
+  // 7. orchestrator + queen agents
+  for (const [name, agent] of [
+    ['kf-orchestrator', buildOrchestratorAgent(coreKfNames)],
+    ['kf-queen', buildQueenAgent(coreKfNames)],
+  ]) {
+    step(`.kiro/agents/${name}.json`, writeIfChanged(
+      join(dir, '.kiro', 'agents', `${name}.json`),
+      JSON.stringify(agent, null, 2) + '\n',
+    ));
+    const promptBody = readFileSync(join(pkgRoot, 'templates', 'prompts', `${name}.md`), 'utf8');
+    step(`.kiro/agents/prompts/${name}.md`, writeIfChanged(
+      join(dir, '.kiro', 'agents', 'prompts', `${name}.md`),
+      promptBody,
+    ));
+  }
 
   return { steps };
 }
