@@ -129,13 +129,16 @@ kiro-flow init --exclude flow-nexus    # drops the 9 flow-nexus agents; persiste
                                        # every re-init. (0 flow-nexus MCP tools exist,
                                        # so nothing to remove there.)
 
-# Port-tier plugins (dossier 11) — vendored agent/command/skill packs that need
-# no engine. Enable the ones you'll use (persisted; replayed on every re-init):
+# Port-tier plugins (dossier 11, M12) — vendored agent/command/skill packs that
+# need no engine. Enable the ones you'll use (persisted; replayed on every
+# re-init). At work the model defaults (sonnet-4.6/opus-4.8) route correctly —
+# no model-map override needed (that was a HOME-only workaround; free tier lacks
+# sonnet-4.6). Verified live end-to-end on kiro-cli 2.10.0 (see note below):
 kiro-flow plugins list                 # 8 vendored, ● enabled / ○ available
 kiro-flow plugins add ddd security-audit adr   # e.g. DDD + security + ADRs
 #   → kf-domain-modeler / kf-security-auditor / kf-adr-architect agents,
 #     their skills into .kiro/skills, their /commands under .claude/commands.
-#   kiro-flow plugins remove --all   reverts cleanly.
+#   kiro-flow plugins remove <name> | --all   reverts cleanly.
 
 kiro-cli agent list                    # expect kf-orchestrator + the kf-* library
 kiro-cli chat --agent kf-orchestrator
@@ -154,13 +157,60 @@ npx -y ruflo memory search "plan"      # row persisted in .swarm/memory.db
 > ~20k), or remove individually (`kiro-flow skills list` shows per-skill cost).
 > Re-run `kiro-flow skills add --all` any time — it is idempotent.
 
-Record in this dossier afterwards: the auth-probe command that worked, and
-whether `kiro-cli agent list` picks up `.kiro/agents/` workspace-locally.
+## Updating an existing install + enabling plugins (M12)
+
+If the laptop already ran `install.sh` on a workspace and you just want the
+newest features (e.g. the port-tier plugins), you do **not** re-init from
+scratch — update the tool, then enable what you want:
+
+```bash
+# 1. Update kiro-flow in place. The install one-liner re-pulls latest main
+#    (shallow clone → ~/.local/share/kiro-flow, symlink in ~/.local/bin):
+curl -fsSL https://cdn.jsdelivr.net/gh/smashkat12/kiro-flow@main/scripts/install.sh | bash
+
+# 2. In your workspace, enable the plugins you'll use:
+cd <your-workspace>
+kiro-flow plugins list                 # the 8 vendored port-tier plugins
+kiro-flow plugins add ddd security-audit adr
+
+# 3. Verify live:
+kiro-cli agent list                    # kf-domain-modeler / kf-security-auditor / kf-adr-architect
+kiro-cli chat --agent kf-domain-modeler
+```
+
+`plugins add/remove` runs the Kiro side of init itself (converts the plugin
+agents into the same dedup pass, installs skills, namespaces commands) and
+persists the enabled set to `.kiro/kiro-flow/plugins.json` — so the choice
+survives future updates and every `kiro-flow init`. No `--force`, no re-running
+`ruflo init`. If a plugin agent ever reports a missing model, that's the one
+case to edit `.kiro/kiro-flow/model-map.json` (shouldn't happen at work).
+
+> **Live verification (home, kiro-cli 2.10.0, free tier w/ a sonnet-4.5 model
+> map):** enabled `ruflo-ddd` + `ruflo-security-audit` and confirmed all three
+> legs on a real CLI session — (1) `kiro-cli agent list` picks up the converted
+> plugin agents as **Workspace** agents; (2) `kiro-cli chat --agent
+> kf-domain-modeler` loads the persona, routes to the pinned model, the kf hook
+> block fires, and the agent **correctly names its auto-loaded `ddd-context/
+> -aggregate/-validate` skills** (proves `.kiro/skills` auto-load into the
+> agent); (3) `kiro-flow cmd ddd/ddd --agent kf-domain-modeler "context list"`
+> resolves + kiroifies + runs through kiro-cli end-to-end. Same for
+> `kf-security-auditor` (named its `dependency-check/security-scan` skills).
+
+Record in this dossier afterwards: the auth-probe command that worked. (Two M3
+open unknowns are now **resolved live**: `kiro-cli agent list` DOES pick up
+`.kiro/agents/` workspace-locally, and `file://./prompts/<name>.md` prompt
+refs DO resolve — the plugin agents use them and loaded + responded correctly.)
 
 ## Open unknowns (M3 additions)
 
-- Does Kiro resolve `file://./prompts/…` relative to the agent JSON? (M2 #a —
-  first thing to check in the demo; fallback `--inline-prompts`.)
-- Auth probe command surface (`kiro-cli whoami` vs `auth status` vs other).
+- ~~Does Kiro resolve `file://./prompts/…` relative to the agent JSON?~~
+  **RESOLVED (live, kiro-cli 2.10.0):** yes — plugin agents ship
+  `file://./prompts/<name>.md` and loaded + responded correctly; no
+  `--inline-prompts` fallback needed.
+- ~~Does `kiro-cli agent list` pick up `.kiro/agents/` workspace-locally?~~
+  **RESOLVED (live):** yes — converted agents (incl. plugin agents) appear as
+  **Workspace** agents from within the workspace dir.
+- Auth probe command surface (`kiro-cli whoami` vs `auth status` vs other) —
+  still to pin down on the employer SSO login (home used free-tier login).
 - Upstream PR candidates: fix `--all-agents` kebab/camel read; env-gated
   category filter in `registerTools()` (from dossier 01).
