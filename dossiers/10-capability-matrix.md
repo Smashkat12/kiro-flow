@@ -70,7 +70,7 @@ as-is · **dropped** = no Kiro equivalent, documented.
 | 34 skills | **ported** (opt-in) | M11 resources pass: Kiro DOES have a skills surface — `.kiro/skills/*/SKILL.md` auto-loads into every agent (verified via `/context show`). `kiro-flow skills add --core\|<name>\|--all` copies ruflo's 38 skills there; opt-in because all 38 = ~151k tokens always-on (curated core ~20k). `cmd`/steering/personas still cover the rest |
 | Powers / team distribution | **built** (IDE verify pending) | M10: `powers/kiro-flow` bundle + `power pack`; install.sh; clean-machine test |
 | Cost tracker | **rebuilt** | M14: ruflo reads CC transcripts; Kiro has none but every kiro-cli turn prints `▸ Credits: X`. The shim persists each daemon/worker/judge call to a workspace JSONL ledger; `kiro-flow cost` aggregates by model/entrypoint/day (→ USD via `KIRO_FLOW_CREDIT_USD`). Verified live (shim footer → ledger → report). Interactive plane logged via `cost add` |
-| Web UI / agent dashboard | **rebuilt** (local) / **N-A** (hosted) | M15: ruflo's RuVocal web chat + goal.ruv.io dashboard are separate hosted apps with their own non-Kiro model providers (Docker+Mongo) → N-A on a governed Kiro laptop (Kiro itself is the chat frontend). But the telemetry those visualize is all local — `kiro-flow dashboard` renders one self-contained HTML page (agents, cost ledger, hive/swarm, learning, sessions; no network/server/deps). Verified live (rendered in-browser) |
+| Web UI / agent dashboard | **rebuilt** (local) / **N-A** (hosted) | M15: ruflo's RuVocal web chat + goal.ruv.io dashboard are separate hosted apps with their own non-Kiro model providers (Docker+Mongo) → N-A on a governed Kiro laptop (Kiro itself is the chat frontend). But the telemetry those visualize is all local — `kiro-flow dashboard` renders one self-contained HTML page (agents, cost ledger, hive/swarm, learning, sessions), and `--serve` runs a **loopback-only** (127.0.0.1) auto-refreshing live view. Verified live in-browser (a CLI `cost add` appeared on the open page within one poll) |
 | Statusline | **dropped** | CC-transcript/status-line-hook dependent; no Kiro equivalent |
 | CC transcript import (auto-memory) | **dropped** | M7: no transcript tree on Kiro; capture flows via hooks + memory_store instead |
 | PreCompact / Notification / Subagent* hooks | **dropped** | M4: no matching Kiro events (5-event surface) |
@@ -90,7 +90,7 @@ injection).
 
 ## Verification ledger (all local, kiro-cli 2.10.0)
 
-- 125 automated tests green across M2–M15 suites
+- 128 automated tests green across M2–M15 suites
 - Live: MCP 350-tool handshake · agent validation via real `kiro-cli agent
   validate` · hook safety block (`rm -rf /` stopped by ruflo's own rule) ·
   headless worker sweep · claude-less work-laptop simulation · hive session
@@ -274,9 +274,27 @@ external fonts/scripts** (safe to open on a locked-down machine):
 - **agents** — filterable table (name, model, profile, tool count, delegation
   roster, role), core/coordinator pills.
 
-`kiro-flow dashboard [--open] [--out <file>] [--json]` → writes
-`.kiro/kiro-flow/dashboard.html`; re-run to refresh (point-in-time snapshot,
-never a live socket). Collector + renderer unit-tested (`test/dashboard.test.mjs`,
-4 tests: reads all signals, empty-workspace degradation, self-containment +
-HTML-escaping of untrusted agent descriptions). Verified live — rendered
-in-browser against a real workspace (76 agents, cost bars, hive/learning panels).
+Two modes:
+
+- **snapshot** — `kiro-flow dashboard [--open] [--out <file>] [--json]` writes
+  `.kiro/kiro-flow/dashboard.html` (self-contained; shareable; re-run to
+  refresh). The zero-port option.
+- **live** — `kiro-flow dashboard --serve [--port 4173] [--interval 3]
+  [--open]` starts a **loopback HTTP server bound to 127.0.0.1 only** (never
+  network-exposed — the deliberate safety property for a governed laptop). The
+  page polls a same-origin `/api/fragment` every `interval`s and swaps `<main>`
+  in place (no full reload, no flicker; a green "live" dot + updating
+  timestamp). There is no socket *into* the agents — they are the npx MCP
+  engine / shim / hooks writing files (`.swarm/`, `.claude-flow/`, the cost
+  ledger); the server just re-reads those on each poll, which is the correct
+  architecture since the files *are* the real-time source of truth. Routes: `/`
+  (live page), `/api/fragment` (fresh body), `/api/data` (raw JSON). Ctrl-C
+  stops it.
+
+Collector + renderers + the loopback server unit/integration-tested
+(`test/dashboard.test.mjs`, 7 tests: reads all signals, empty-workspace
+degradation, self-containment + HTML-escaping of untrusted agent descriptions,
+bare-fragment shape, live-vs-static page markers, and a real ephemeral-port
+server serving `/` `/api/fragment` `/api/data` + 404). Verified live in-browser
+— a `cost add` from the CLI showed up on the open page within one poll (0.15 →
+0.65 credits, no manual reload).

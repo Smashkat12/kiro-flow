@@ -42,8 +42,10 @@ Usage:
                                        add/remove: <name…> | --all  (persisted, replayed by init)
   kiro-flow cost [add|clear] [opts]    Kiro-credit spend from the ledger (by model/entrypoint/day)
                                        cost [--since <days>] [--json] · cost add <credits> [--model --note]
-  kiro-flow dashboard [--open]         render a local read-only telemetry page (agents/cost/hive/learning)
+  kiro-flow dashboard [--open]         write a local telemetry page (agents/cost/hive/learning) snapshot
                                        → .kiro/kiro-flow/dashboard.html  [--out <file>] [--json]
+  kiro-flow dashboard --serve          live view — loopback HTTP server, auto-refreshing
+                                       [--port 4173] [--interval 3] [--open]  (127.0.0.1 only)
   kiro-flow power pack [--out <dir>]   assemble the team-distributable Kiro Power bundle
   kiro-flow clean-cc [--dir <dir>]     remove inert Claude-Code files (CLAUDE.md, .mcp.json, …)
   kiro-flow shim-path                  print the shim dir (for manual PATH injection)
@@ -301,13 +303,19 @@ if (cmd === 'convert' && sub === 'agents') {
       out: { type: 'string' },
       open: { type: 'boolean', default: false },
       json: { type: 'boolean', default: false },
+      serve: { type: 'boolean', default: false },
+      port: { type: 'string' },
+      interval: { type: 'string' },
     },
   });
-  process.exit(dashboardCommand({
+  process.exit(await dashboardCommand({
     dir: resolve(values.dir),
     ...(values.out ? { out: resolve(values.out) } : {}),
     open: values.open,
     json: values.json,
+    serve: values.serve,
+    ...(values.port ? { port: Number(values.port) } : {}),
+    ...(values.interval ? { interval: Math.max(1, Number(values.interval)) } : {}),
   }));
 } else if (cmd === 'power' && sub === 'pack') {
   const outIdx = rest.indexOf('--out');

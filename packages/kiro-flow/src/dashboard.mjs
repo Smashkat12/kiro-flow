@@ -11,6 +11,7 @@
  * refresh; it is a point-in-time snapshot, never a live socket.
  */
 import { execFile } from 'node:child_process';
+import { createServer } from 'node:http';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { readLedger, summarize, creditUsd } from './cost.mjs';
@@ -123,7 +124,37 @@ function card(label, value, sub) {
   return `<div class="card"><div class="card-val">${esc(value)}</div><div class="card-label">${esc(label)}</div>${sub ? `<div class="card-sub">${esc(sub)}</div>` : ''}</div>`;
 }
 
-export function renderDashboardHtml(data) {
+const STYLE = `
+:root{--bg:#f6f7f9;--panel:#fff;--ink:#1a1d21;--muted:#6b7280;--line:#e5e7eb;--accent:#4f46e5;--core:#0891b2;--coord:#7c3aed}
+@media(prefers-color-scheme:dark){:root{--bg:#0d1117;--panel:#161b22;--ink:#e6edf3;--muted:#8b949e;--line:#30363d;--accent:#7c8cff;--core:#22d3ee;--coord:#a78bfa}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}
+header h1{font-size:18px;margin:0}header .path{color:var(--muted);font-family:ui-monospace,monospace;font-size:12px}
+header .ts{margin-left:auto;color:var(--muted);font-size:12px;display:flex;align-items:center}
+.live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e;margin-right:6px;animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+main{max-width:1100px;margin:0 auto;padding:20px 24px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:24px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.card-val{font-size:24px;font-weight:650;letter-spacing:-.02em}.card-label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
+.card-sub{color:var(--muted);font-size:12px;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:20px}
+.panel h2{font-size:14px;margin:0 0 12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}@media(max-width:720px){.grid2{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+td.num{text-align:right;font-variant-numeric:tabular-nums}.muted{color:var(--muted)}.desc{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill{display:inline-block;font-size:10px;padding:1px 6px;border-radius:20px;font-weight:600;vertical-align:middle}
+.pill.core{background:color-mix(in srgb,var(--core) 18%,transparent);color:var(--core)}.pill.coord{background:color-mix(in srgb,var(--coord) 18%,transparent);color:var(--coord)}
+.bar-row{display:grid;grid-template-columns:130px 1fr auto;gap:10px;align-items:center;margin:5px 0}
+.bar-label{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bar-track{height:8px;background:var(--line);border-radius:5px;overflow:hidden}
+.bar-fill{display:block;height:100%;background:var(--accent);border-radius:5px;transition:width .4s ease}.bar-val{font-size:12px;font-variant-numeric:tabular-nums}
+.mini{display:inline-block;margin:0 18px 8px 0}.mini b{font-size:20px;display:block}.mini span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.scroll{overflow-x:auto}#flt{margin-bottom:10px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);width:220px}
+footer{color:var(--muted);font-size:12px;text-align:center;padding:16px}`;
+
+/** The inner content of <main> — recomputed on every poll in serve mode. */
+export function renderBody(data) {
   const c = data.cost ?? {};
   const usd = c.usdPerCredit ?? creditUsd();
   const coreCount = data.agents.filter((a) => a.core).length;
@@ -167,41 +198,7 @@ export function renderDashboardHtml(data) {
   ].filter(([, v]) => v != null && v !== '' && typeof v !== 'object')
    .map(([k, v]) => `<div class="mini"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join('') || '<p class="muted">no learning metrics yet</p>';
 
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>kiro-flow dashboard</title>
-<style>
-:root{--bg:#f6f7f9;--panel:#fff;--ink:#1a1d21;--muted:#6b7280;--line:#e5e7eb;--accent:#4f46e5;--core:#0891b2;--coord:#7c3aed}
-@media(prefers-color-scheme:dark){:root{--bg:#0d1117;--panel:#161b22;--ink:#e6edf3;--muted:#8b949e;--line:#30363d;--accent:#7c8cff;--core:#22d3ee;--coord:#a78bfa}}
-*{box-sizing:border-box}body{margin:0;font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
-header{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:4px 16px;align-items:baseline}
-header h1{font-size:18px;margin:0}header .path{color:var(--muted);font-family:ui-monospace,monospace;font-size:12px}
-header .ts{margin-left:auto;color:var(--muted);font-size:12px}
-main{max-width:1100px;margin:0 auto;padding:20px 24px}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:24px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
-.card-val{font-size:24px;font-weight:650;letter-spacing:-.02em}.card-label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
-.card-sub{color:var(--muted);font-size:12px;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:20px}
-.panel h2{font-size:14px;margin:0 0 12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}@media(max-width:720px){.grid2{grid-template-columns:1fr}}
-table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
-th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
-td.num{text-align:right;font-variant-numeric:tabular-nums}.muted{color:var(--muted)}.desc{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pill{display:inline-block;font-size:10px;padding:1px 6px;border-radius:20px;font-weight:600;vertical-align:middle}
-.pill.core{background:color-mix(in srgb,var(--core) 18%,transparent);color:var(--core)}.pill.coord{background:color-mix(in srgb,var(--coord) 18%,transparent);color:var(--coord)}
-.bar-row{display:grid;grid-template-columns:130px 1fr auto;gap:10px;align-items:center;margin:5px 0}
-.bar-label{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bar-track{height:8px;background:var(--line);border-radius:5px;overflow:hidden}
-.bar-fill{display:block;height:100%;background:var(--accent);border-radius:5px}.bar-val{font-size:12px;font-variant-numeric:tabular-nums}
-.mini{display:inline-block;margin:0 18px 8px 0}.mini b{font-size:20px;display:block}.mini span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
-.scroll{overflow-x:auto}#flt{margin-bottom:10px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);width:220px}
-footer{color:var(--muted);font-size:12px;text-align:center;padding:16px}
-</style></head><body>
-<header>
-  <h1>kiro-flow</h1><span class="path">${esc(data.workspace)}</span>
-  <span class="ts">snapshot ${esc(data.generatedAt.slice(0, 19).replace('T', ' '))} · re-run <code>kiro-flow dashboard</code> to refresh</span>
-</header>
-<main>
+  return `
   <div class="cards">${overview}</div>
 
   <div class="panel">
@@ -231,8 +228,24 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:16px}
     <tbody>${agentRows || '<tr><td colspan="6" class="muted">no agents converted yet — run kiro-flow init</td></tr>'}</tbody></table></div>
   </div>
 
-  <footer>kiro-flow local dashboard · read-only snapshot · no network, no server</footer>
-</main></body></html>`;
+  <footer>kiro-flow local dashboard · read-only telemetry</footer>`;
+}
+
+/**
+ * Full HTML page. Static mode writes a snapshot; live mode (serve) adds a small
+ * same-origin poller that swaps <main> every `interval`s from /api/fragment.
+ */
+export function renderDashboardHtml(data, { live = false, interval = 3 } = {}) {
+  const headerRight = live
+    ? `<span class="ts"><span class="live-dot"></span>live · every ${interval}s · updated <span id="live-ts">${esc(data.generatedAt.slice(11, 19))}</span></span>`
+    : `<span class="ts">snapshot ${esc(data.generatedAt.slice(0, 19).replace('T', ' '))} · re-run <code>kiro-flow dashboard</code> to refresh</span>`;
+  const poller = live ? `<script>(function(){var I=${interval * 1000};async function tick(){try{var r=await fetch('/api/fragment',{cache:'no-store'});if(!r.ok)return;var html=await r.text();var app=document.getElementById('app');var f=document.getElementById('flt');var fv=f?f.value:'';app.innerHTML=html;var nf=document.getElementById('flt');if(nf){nf.value=fv;nf.dispatchEvent(new Event('input'));}var ts=document.getElementById('live-ts');if(ts)ts.textContent=new Date().toTimeString().slice(0,8);}catch(e){}}setInterval(tick,I);})();</script>` : '';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kiro-flow dashboard</title>
+<style>${STYLE}</style></head><body>
+<header><h1>kiro-flow</h1><span class="path">${esc(data.workspace)}</span>${headerRight}</header>
+<main id="app">${renderBody(data)}</main>${poller}</body></html>`;
 }
 
 function tryOpen(path) {
@@ -240,8 +253,57 @@ function tryOpen(path) {
   try { execFile(opener, [path], () => {}); return true; } catch { return false; }
 }
 
-/** CLI: `kiro-flow dashboard [--out <file>] [--open] [--json]`. Returns exit code. */
-export function dashboardCommand({ dir, out, open = false, json = false }) {
+/**
+ * Live mode: a loopback-only HTTP server that re-reads the workspace on each
+ * request. Binds 127.0.0.1 exclusively — never network-exposed. Serves the page
+ * at `/`, a fresh body fragment at `/api/fragment` (what the poller swaps), and
+ * the raw snapshot at `/api/data`. Resolves its exit code on SIGINT.
+ */
+/** The (not-yet-listening) http.Server that re-reads `dir` per request. Exported
+ *  so an integration test can listen on an ephemeral port and close it. */
+export function createDashboardServer(dir, interval = 3) {
+  return createServer((req, res) => {
+    const url = (req.url || '/').split('?')[0];
+    try {
+      if (url === '/' || url === '/index.html') {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        res.end(renderDashboardHtml(collectDashboardData(dir), { live: true, interval }));
+      } else if (url === '/api/fragment') {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        res.end(renderBody(collectDashboardData(dir)));
+      } else if (url === '/api/data') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(collectDashboardData(dir)));
+      } else {
+        res.writeHead(404, { 'content-type': 'text/plain' });
+        res.end('not found');
+      }
+    } catch (e) { res.writeHead(500, { 'content-type': 'text/plain' }); res.end(String(e.message)); }
+  });
+}
+
+export function serveDashboard({ dir, port = 4173, interval = 3, open = false, host = '127.0.0.1' }) {
+  return new Promise((resolve) => {
+    const server = createDashboardServer(dir, interval);
+    server.on('error', (e) => {
+      console.error(`kiro-flow dashboard --serve: ${e.code === 'EADDRINUSE' ? `port ${port} already in use — try --port <n>` : e.message}`);
+      resolve(1);
+    });
+    server.listen(port, host, () => {
+      const urlStr = `http://${host}:${port}/`;
+      console.log(`kiro-flow dashboard (live) → ${urlStr}`);
+      console.log(`  refreshes every ${interval}s · bound to ${host} (loopback only, not network-exposed) · Ctrl-C to stop`);
+      if (open) tryOpen(urlStr);
+    });
+    const stop = () => { server.close(); console.log('\ndashboard stopped'); resolve(0); };
+    process.on('SIGINT', stop);
+    process.on('SIGTERM', stop);
+  });
+}
+
+/** CLI: `kiro-flow dashboard [--serve [--port N] [--interval N]] [--out <file>] [--open] [--json]`. */
+export function dashboardCommand({ dir, out, open = false, json = false, serve = false, port = 4173, interval = 3 }) {
+  if (serve) return serveDashboard({ dir, port, interval, open });
   const data = collectDashboardData(dir);
   if (json) { console.log(JSON.stringify(data, null, 2)); return 0; }
   const target = out ?? join(dir, DASHBOARD_REL);
@@ -252,6 +314,6 @@ export function dashboardCommand({ dir, out, open = false, json = false }) {
   console.log(`dashboard → ${target}`);
   console.log(`  ${data.agents.length} agents · ${data.plugins.length} plugins · ${fmtCred(data.cost.total)} credits · ${data.hive.sessions} hive sessions`);
   if (open) { tryOpen(target); console.log('  opening in your browser…'); }
-  else console.log(`  open it:  xdg-open ${target}   (or pass --open)`);
+  else console.log(`  open it:  xdg-open ${target}   ·   live view:  kiro-flow dashboard --serve`);
   return 0;
 }

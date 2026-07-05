@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { collectDashboardData, renderDashboardHtml } from '../src/dashboard.mjs';
+import { collectDashboardData, renderDashboardHtml, renderBody, createDashboardServer } from '../src/dashboard.mjs';
 
 function seed() {
   const dir = mkdtempSync(join(tmpdir(), 'kf-dash-'));
@@ -87,6 +87,35 @@ test('renderDashboardHtml: self-contained (no network/scripts), key sections, es
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('renderBody: returns a bare fragment (no page shell) for live swaps', () => {
+  const dir = seed();
+  try {
+    const frag = renderBody(collectDashboardData(dir));
+    assert.ok(!/<!doctype|<html|<head|<body/i.test(frag), 'fragment has no page shell');
+    assert.ok(frag.includes('class="cards"') && frag.includes('Agents (2)'), 'fragment has the panels');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('renderDashboardHtml live mode: adds same-origin poller + live indicator, static does not', () => {
+  const dir = seed();
+  try {
+    const data = collectDashboardData(dir);
+    const live = renderDashboardHtml(data, { live: true, interval: 5 });
+    assert.ok(live.includes('id="app"'), 'main is swappable');
+    assert.ok(live.includes('/api/fragment') && live.includes('setInterval'), 'poller present');
+    assert.ok(live.includes('<span class="live-dot">') && live.includes('every 5s'), 'live indicator + interval');
+    assert.ok(!/https?:\/\//.test(live.replace(/lang="en"/g, '')), 'poller uses a same-origin relative URL, no external host');
+    assert.ok(!live.includes('re-run <code>kiro-flow dashboard</code>'), 'no static snapshot label');
+
+    const stat = renderDashboardHtml(data);
+    // the .live-dot CSS class lives in the shared stylesheet; the poller + the
+    // live timestamp span are the real live-only markers
+    assert.ok(!stat.includes('setInterval') && !stat.includes('id="live-ts"'), 'static mode has no poller');
+    assert.ok(!stat.includes('<span class="live-dot">'), 'static mode has no live indicator element');
+    assert.ok(stat.includes('re-run <code>kiro-flow dashboard</code>'), 'static snapshot label present');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('renderDashboardHtml: empty workspace shows friendly fallbacks', () => {
   const dir = mkdtempSync(join(tmpdir(), 'kf-dash-empty2-'));
   try {
@@ -94,4 +123,30 @@ test('renderDashboardHtml: empty workspace shows friendly fallbacks', () => {
     assert.ok(html.includes('no agents converted yet'));
     assert.ok(html.includes('Agents (0)'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('serve mode: loopback server serves page / fragment / data, and 404s', async () => {
+  const dir = seed();
+  const server = createDashboardServer(dir);
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const port = server.address().port;
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    const page = await fetch(`${base}/`);
+    const pageHtml = await page.text();
+    assert.equal(page.status, 200);
+    assert.ok(pageHtml.includes('id="app"') && pageHtml.includes('/api/fragment'), 'live page with poller');
+
+    const frag = await (await fetch(`${base}/api/fragment`)).text();
+    assert.ok(!/<html/i.test(frag) && frag.includes('Agents (2)'), 'fragment is bare body');
+
+    const data = await (await fetch(`${base}/api/data`)).json();
+    assert.equal(data.agents.length, 2);
+    assert.ok(Math.abs(data.cost.total - 0.5) < 1e-9);
+
+    assert.equal((await fetch(`${base}/nope`)).status, 404);
+  } finally {
+    await new Promise((r) => server.close(r));
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

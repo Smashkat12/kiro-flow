@@ -153,6 +153,12 @@ KIRO_FLOW_CREDIT_USD=<usd-per-credit> kiro-flow cost   # adds a $ column
 kiro-flow cost --since 7               # trailing 7-day window (--json for scripting)
 #   Interactive `kiro-cli chat` shows its `▸ Credits:` footer live but isn't
 #   auto-captured; log it with:  kiro-flow cost add <credits> [--model m --note n]
+
+# Dashboard (M15) — local read-only view of agents / cost / hive / learning:
+kiro-flow dashboard --open             # writes a self-contained HTML snapshot + opens it
+kiro-flow dashboard --serve --open     # LIVE view: loopback server (127.0.0.1 only),
+                                       # auto-refreshes every few seconds; Ctrl-C to stop.
+                                       # [--port 4173] [--interval 3]. Not network-exposed.
 ```
 
 > **Cost of `skills add --all`:** every `.kiro/skills/*/SKILL.md` auto-loads
