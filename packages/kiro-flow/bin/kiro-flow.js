@@ -16,6 +16,7 @@ import { powerPackCommand } from '../src/power.mjs';
 import { skillsCommand } from '../src/convert/skills.mjs';
 import { modelsCommand } from '../src/models.mjs';
 import { pluginsCommand, discoverPlugins, writePlugins } from '../src/plugins.mjs';
+import { costCommand } from '../src/cost.mjs';
 
 const USAGE = `kiro-flow — ruflo on AWS Kiro
 
@@ -38,6 +39,8 @@ Usage:
                                        add: --core | <name…> | --all   remove: <name…> | --all
   kiro-flow plugins <list|add|remove>  enable port-tier ruflo plugins (agents+commands+skills)
                                        add/remove: <name…> | --all  (persisted, replayed by init)
+  kiro-flow cost [add|clear] [opts]    Kiro-credit spend from the ledger (by model/entrypoint/day)
+                                       cost [--since <days>] [--json] · cost add <credits> [--model --note]
   kiro-flow power pack [--out <dir>]   assemble the team-distributable Kiro Power bundle
   kiro-flow clean-cc [--dir <dir>]     remove inert Claude-Code files (CLAUDE.md, .mcp.json, …)
   kiro-flow shim-path                  print the shim dir (for manual PATH injection)
@@ -263,6 +266,30 @@ if (cmd === 'convert' && sub === 'agents') {
     return pluginSummary;
   };
   process.exit(pluginsCommand({ dir, sub, names, reinit }));
+} else if (cmd === 'cost') {
+  // sub is optional (default report); only treat it as a subcommand when it is
+  // one — otherwise `cost --dir X` would swallow the flag as the subcommand.
+  const knownSub = ['add', 'clear', 'report'].includes(sub) ? sub : undefined;
+  const { values, positionals } = parseArgs({
+    args: (knownSub ? rest : [sub, ...rest]).filter((a) => a !== undefined),
+    options: {
+      dir: { type: 'string', default: '.' },
+      json: { type: 'boolean', default: false },
+      since: { type: 'string' },
+      model: { type: 'string' },
+      note: { type: 'string' },
+    },
+    allowPositionals: true,
+  });
+  process.exit(costCommand({
+    dir: resolve(values.dir),
+    sub: knownSub,
+    json: values.json,
+    sinceDays: values.since ? Number(values.since) : undefined,
+    credits: knownSub === 'add' && positionals[0] != null ? Number(positionals[0]) : undefined,
+    model: values.model,
+    note: values.note,
+  }));
 } else if (cmd === 'power' && sub === 'pack') {
   const outIdx = rest.indexOf('--out');
   const out = outIdx >= 0 ? rest[outIdx + 1] : 'powers/kiro-flow';

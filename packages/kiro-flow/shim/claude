@@ -134,6 +134,30 @@ function parseCredits(raw) {
   return m ? Number(m[1]) : undefined;
 }
 
+/**
+ * Append this invocation to the workspace cost ledger
+ * (.kiro/kiro-flow/cost-ledger.jsonl) so `kiro-flow cost` can aggregate it.
+ * Best-effort: a ledger failure must never break a worker.
+ */
+function recordLedger({ credits, model, exitCode }) {
+  try {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const cwd = process.env.CLAUDE_FLOW_CWD || process.cwd();
+    const file = path.join(cwd, '.kiro', 'kiro-flow', 'cost-ledger.jsonl');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const row = {
+      ts: new Date().toISOString(),
+      credits: Number.isFinite(credits) ? credits : null,
+      model: model || 'auto',
+      entrypoint: process.env.CLAUDE_ENTRYPOINT || 'worker',
+      ...(process.env.KIRO_SESSION_ID ? { session: process.env.KIRO_SESSION_ID } : {}),
+      exit: exitCode,
+    };
+    fs.appendFileSync(file, JSON.stringify(row) + '\n');
+  } catch { /* never break the worker over a ledger write */ }
+}
+
 /** The `claude -p --output-format json` result envelope ruflo parses. */
 function buildEnvelope({ text, exitCode, credits, sessionId }) {
   const env = {
@@ -209,7 +233,9 @@ function main() {
   const raw = (res.stdout || '') + (res.stderr ? `\n${res.stderr}` : '');
   const text = cleanKiroOutput(res.stdout || '') || cleanKiroOutput(raw);
   const exitCode = res.status ?? 1;
-  emit(parsed, { text, exitCode, credits: parseCredits(raw) });
+  const credits = parseCredits(raw);
+  emit(parsed, { text, exitCode, credits });
+  recordLedger({ credits, model: mapModel(parsed.model || process.env.ANTHROPIC_MODEL), exitCode });
   if (exitCode !== 0 && res.stderr) process.stderr.write(cleanKiroOutput(res.stderr) + '\n');
   process.exit(exitCode);
 }

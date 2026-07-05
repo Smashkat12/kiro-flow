@@ -69,7 +69,8 @@ as-is · **dropped** = no Kiro equivalent, documented.
 | 166 slash-commands | **ported** | M9: `kiro-flow cmd <id>` runner ($ARGUMENTS + kiroification); curated 20 verified; full catalogue in dossier 09 |
 | 34 skills | **ported** (opt-in) | M11 resources pass: Kiro DOES have a skills surface — `.kiro/skills/*/SKILL.md` auto-loads into every agent (verified via `/context show`). `kiro-flow skills add --core\|<name>\|--all` copies ruflo's 38 skills there; opt-in because all 38 = ~151k tokens always-on (curated core ~20k). `cmd`/steering/personas still cover the rest |
 | Powers / team distribution | **built** (IDE verify pending) | M10: `powers/kiro-flow` bundle + `power pack`; install.sh; clean-machine test |
-| Statusline, cost tracker | **dropped** | CC-transcript-dependent; no Kiro equivalent |
+| Cost tracker | **rebuilt** | M14: ruflo reads CC transcripts; Kiro has none but every kiro-cli turn prints `▸ Credits: X`. The shim persists each daemon/worker/judge call to a workspace JSONL ledger; `kiro-flow cost` aggregates by model/entrypoint/day (→ USD via `KIRO_FLOW_CREDIT_USD`). Verified live (shim footer → ledger → report). Interactive plane logged via `cost add` |
+| Statusline | **dropped** | CC-transcript/status-line-hook dependent; no Kiro equivalent |
 | CC transcript import (auto-memory) | **dropped** | M7: no transcript tree on Kiro; capture flows via hooks + memory_store instead |
 | PreCompact / Notification / Subagent* hooks | **dropped** | M4: no matching Kiro events (5-event surface) |
 | Interactive stream-json plane | **dropped** | M6: hive queen runs as a normal kiro-cli chat; headless emits plain transcripts (shim's stream-json is a 2-line envelope) |
@@ -88,7 +89,7 @@ injection).
 
 ## Verification ledger (all local, kiro-cli 2.10.0)
 
-- 115+ automated tests green across M2–M12 suites
+- 121 automated tests green across M2–M14 suites
 - Live: MCP 350-tool handshake · agent validation via real `kiro-cli agent
   validate` · hook safety block (`rm -rf /` stopped by ruflo's own rule) ·
   headless worker sweep · claude-less work-laptop simulation · hive session
@@ -215,3 +216,33 @@ Probed the last three agent fields on kiro-cli 2.10.0:
 
 M11 native-agent enrichment is complete: #1 delegation, #2 native tools, #3
 model routing, resources/skills surface, and flagship UX.
+
+## M14 — cost tracking rebuilt on Kiro credits (post-M13)
+
+ruflo's `cost-tracker` plugin reads Claude Code transcripts
+(`~/.claude/projects/**/*.jsonl`) for token counts + USD. Kiro writes no
+transcript tree — but every `kiro-cli` turn prints a `▸ Credits: X.XX` footer.
+The rebuild persists that signal instead of parsing transcripts:
+
+- **Capture (automatic):** the `kiro-claude-shim` already parses the footer for
+  its result envelope; it now also appends one row per invocation to a
+  workspace-local ledger `.kiro/kiro-flow/cost-ledger.jsonl`
+  (`{ts, credits, model, entrypoint, session?, exit}`). This covers the
+  automated planes the shim wraps — daemon background workers, headless
+  `kiro-flow worker`, and the fable judge (`CLAUDE_ENTRYPOINT`) — i.e. the bulk
+  of unattended spend. Best-effort: a ledger write never breaks a worker.
+- **Report:** `kiro-flow cost [--since <days>] [--json]` aggregates the ledger —
+  total credits, and breakdowns **by model / by entrypoint / by day** — with a
+  USD column when `KIRO_FLOW_CREDIT_USD` (the same env the shim uses) is set.
+- **Interactive plane:** raw `kiro-cli chat` and the stdio-inherited launches
+  (`cmd`, `hive-mind`) show the footer live in the terminal but can't be
+  auto-captured without breaking the interactive UX; log those with
+  `kiro-flow cost add <credits> [--model m] [--note n]` (rows tagged
+  `entrypoint: manual`). `kiro-flow cost clear` truncates the ledger.
+
+**Coverage boundary (honest):** automated spend is captured end-to-end;
+interactive spend is manual-entry. Verified live — a real shim→kiro-cli worker
+call and a judge call both wrote credit rows, and `kiro-flow cost` reported them
+by model/entrypoint/day. Pure logic (record/summarize/report) unit-tested in
+`test/cost.test.mjs` (6 tests). This is the one "dropped" capability that had a
+real Kiro-native signal to rebuild on; statusline stays dropped (no equivalent).
