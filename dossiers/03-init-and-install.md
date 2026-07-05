@@ -112,6 +112,10 @@ curl -fsSL https://cdn.jsdelivr.net/gh/smashkat12/kiro-flow@main/scripts/install
 mkdir demo && cd demo
 KIRO_FLOW_LOCAL=<checkout> bash <checkout>/scripts/install.sh   # or the curl one-liner post-publish
 kiro-flow doctor                       # expect: all green (auth check answers unknown #2)
+kiro-flow models                       # tier→model map + which agents pin what; every
+                                       # routed model should be ✓ (opus-4.8 / sonnet-4.6
+                                       # exist on the employer Kiro). If any ✗, edit
+                                       # .kiro/kiro-flow/model-map.json + rerun init.
 
 # Skills — port ruflo's skill playbooks onto Kiro's auto-loaded .kiro/skills
 # surface (M11 resources pass). This machine wants ALL skills:

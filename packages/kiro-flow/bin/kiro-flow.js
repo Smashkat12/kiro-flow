@@ -14,6 +14,7 @@ import { sessionListCommand, sessionResumeCommand, memoryRefreshCommand } from '
 import { cmdCommand } from '../src/cmd.mjs';
 import { powerPackCommand } from '../src/power.mjs';
 import { skillsCommand } from '../src/convert/skills.mjs';
+import { modelsCommand } from '../src/models.mjs';
 
 const USAGE = `kiro-flow — ruflo on AWS Kiro
 
@@ -31,6 +32,7 @@ Usage:
   kiro-flow session list               Kiro chat sessions joined with hook bridge records
   kiro-flow session resume <id>        kiro-cli chat --resume-id <id> [--agent kf-…]
   kiro-flow memory refresh             rebuild the recall cache now (hooks do it detached)
+  kiro-flow models [--dir <dir>]       show tier→model map + which agents pin what; flag unavailable
   kiro-flow skills <list|add|remove>   port ruflo skill playbooks to .kiro/skills (auto-loaded)
                                        add: --core | <name…> | --all   remove: <name…> | --all
   kiro-flow power pack [--out <dir>]   assemble the team-distributable Kiro Power bundle
@@ -209,6 +211,10 @@ if (cmd === 'convert' && sub === 'agents') {
 } else if (cmd === 'memory' && sub === 'refresh') {
   const { dir } = splitPassthrough(rest);
   process.exit(memoryRefreshCommand({ dir: resolve(dir) }));
+} else if (cmd === 'models') {
+  const dirIdx = [sub, ...rest].indexOf('--dir');
+  const dir = resolve(dirIdx >= 0 ? [sub, ...rest][dirIdx + 1] : '.');
+  process.exit(modelsCommand({ dir }));
 } else if (cmd === 'skills') {
   const { values, positionals } = parseArgs({
     args: rest,
