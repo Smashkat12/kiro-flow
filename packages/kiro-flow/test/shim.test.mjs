@@ -190,6 +190,29 @@ test('syncBinShim: plants the workspace .bin symlink for kiro/mock, removes it f
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+// ── work-laptop simulation: NO Claude Code anywhere on PATH ─────────────────
+
+test('work-laptop: bare `claude --print` resolves to the shim on a PATH with no Claude Code', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'kf-m5-worklaptop-'));
+  try {
+    // A minimal PATH: node's own dir + system dirs. No .npm-global, no
+    // ~/.claude/local, no ancestor node_modules/.bin — the work-laptop shape.
+    const barePath = [dirname(process.execPath), '/usr/bin', '/bin'].join(delimiter);
+    const env = {
+      ...process.env,
+      PATH: `${resolveShimDir(dir)}${delimiter}${barePath}`,
+      KIRO_FLOW_EXECUTOR: 'mock',
+    };
+    const version = spawnSync('claude', ['--version'], { encoding: 'utf8', env, cwd: dir });
+    assert.equal(version.status, 0);
+    assert.match(version.stdout, /kiro-claude-shim/, 'availability probe must hit the shim');
+
+    const res = spawnSync('claude', ['--print'], { input: 'worker sweep', encoding: 'utf8', env, cwd: dir });
+    assert.equal(res.status, 0);
+    assert.match(res.stdout, /MOCK-EXECUTOR ok/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 // ── the actual PATH-lookup contract ruflo relies on ─────────────────────────
 
 test('e2e(mock): a child spawning bare `claude --print` under executorEnv hits the shim', () => {

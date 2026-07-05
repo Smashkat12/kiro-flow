@@ -24,6 +24,7 @@ import {
   DEFAULT_PROFILES, DEFAULT_TOOLS_DATA, HOOK_ADAPTER_REL,
 } from './convert/agents.mjs';
 import { CORE_AGENT_PREFERENCE, CORE_TARGET } from './convert/tool-map.mjs';
+import { syncBinShim } from './daemon.mjs';
 
 const pkgRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 export const RUFLO_SPEC = process.env.KIRO_FLOW_RUFLO_SPEC ?? 'ruflo@~3.23.0';
@@ -152,6 +153,12 @@ export function initWorkspace({ dir, force = false, skipRufloInit = false }) {
   chmodSync(join(shimDest, 'claude'), 0o755);
   writeIfChanged(join(shimDest, 'package.json'), readFileSync(join(pkgRoot, 'shim', 'package.json'), 'utf8'));
   step('.kiro/kiro-flow/shim/claude', shimStatus);
+  // Plant the workspace node_modules/.bin/claude symlink now, not only at
+  // daemon time: on machines with no Claude Code at all (work laptops), this
+  // makes even a bare `npx ruflo daemon start --headless` resolve the shim.
+  // npm installs may clear it; kiro-flow daemon/worker re-plant on every run.
+  syncBinShim(dir, 'kiro');
+  step('node_modules/.bin/claude → shim', 'ok');
 
   // 7. orchestrator agent
   const orchestrator = buildOrchestratorAgent(coreKfNames);

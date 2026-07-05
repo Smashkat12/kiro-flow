@@ -82,6 +82,13 @@ export function syncBinShim(dir, executor) {
  */
 export function runRuflo({ dir, executor, args }) {
   syncBinShim(dir, executor);
+  if (executor === 'claude') {
+    const probe = spawnSync('claude', ['--version'], { stdio: 'ignore' });
+    if (probe.error) {
+      console.error('kiro-flow: warning: --executor claude but no `claude` binary on PATH '
+        + '(expected on machines without Claude Code — use --executor kiro there)');
+    }
+  }
   const env = { ...process.env, ...executorEnv(executor, dir), CLAUDE_FLOW_SETUP_MCP: '0' };
   const res = spawnSync('npx', ['-y', RUFLO_SPEC, ...args], {
     cwd: dir,

@@ -94,6 +94,28 @@ Live (home):
   `kiro-cli chat --no-interactive` visible as the worker's child process
   (result recorded in `.claude-flow/logs/headless/`).
 
+## Work-laptop simulation (no Claude Code installed — verified at home)
+
+The work laptop has **no Claude Code at all**. Simulated locally with a PATH
+containing only node/npm/npx + kiro-cli + system dirs (`which claude` → not
+found), fresh workspace:
+
+- `kiro-flow init` completes fully — including the real `npx ruflo init`
+  (upstream only auto-installs Claude Code from its install.sh, which our
+  install.sh already replaced; `ruflo init` itself never needs the binary).
+- init now also plants `node_modules/.bin/claude → shim` at init time, so even
+  a bare `npx ruflo daemon start --headless` (without the kiro-flow wrapper)
+  resolves the shim. npm installs may clear that symlink; every
+  `kiro-flow daemon/worker` run re-plants it.
+- `kiro-flow doctor` all green (no check requires Claude Code).
+- Live `daemon trigger -w testgaps --headless --executor kiro` on the stripped
+  PATH: the availability probe and the worker spawn both resolve to the shim,
+  real kiro-cli sweep runs.
+- `--executor claude` on a machine without Claude Code prints an explicit
+  warning pointing at `--executor kiro`.
+- The automated suite includes a work-laptop test: bare `claude --print` on a
+  Claude-Code-free PATH must hit the shim (version probe + worker shape).
+
 ## Work-side checklist (Kiro laptop, Pro+/SSO)
 
 - [ ] `kiro-cli chat --no-interactive "say ok"` under SSO login — confirms the
