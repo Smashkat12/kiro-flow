@@ -1,0 +1,25 @@
+{
+  "name": "kiro-flow",
+  "version": "0.2.0",
+  "description": "Adapter that brings ruflo (claude-flow) to AWS Kiro: converts agents/skills/hooks, wires the MCP server, shims headless workers",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "kiro-flow": "bin/kiro-flow.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "data",
+    "templates"
+  ],
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1"
+  }
+}

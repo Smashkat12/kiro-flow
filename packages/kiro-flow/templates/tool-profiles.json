@@ -17,6 +17,14 @@
     "description": "Learning/training agents (~40 tools)",
     "categories": ["memory", "neural", "guidance", "agentdb"]
   },
+  "github": {
+    "description": "GitHub workflow agents (~41 tools)",
+    "categories": ["memory", "github", "workflow", "task"]
+  },
+  "perf": {
+    "description": "Optimization/benchmarking agents (~36 tools)",
+    "categories": ["memory", "performance", "analyze", "task"]
+  },
   "full": {
     "description": "Everything (350 tools) — debugging only, will strain context",
     "categories": ["*"]
