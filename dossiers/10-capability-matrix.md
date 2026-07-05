@@ -90,7 +90,7 @@ injection).
 
 ## Verification ledger (all local, kiro-cli 2.10.0)
 
-- 128 automated tests green across M2–M15 suites
+- 129 automated tests green across M2–M15 suites
 - Live: MCP 350-tool handshake · agent validation via real `kiro-cli agent
   validate` · hook safety block (`rm -rf /` stopped by ruflo's own rule) ·
   headless worker sweep · claude-less work-laptop simulation · hive session
@@ -269,8 +269,10 @@ external fonts/scripts** (safe to open on a locked-down machine):
 - **credit spend** — the M14 ledger as by-model / by-entrypoint bars + recent
   invocations (→ USD when `KIRO_FLOW_CREDIT_USD` is set);
 - **hive / swarm** — sessions, shared-memory keys, consensus, topology;
-- **learning** — routing accuracy, pattern counts, sessions (from
-  `.claude-flow/metrics/learning.json`);
+- **learning** — the two *live* learning subsystems (see below), not the
+  near-static `learning.json`: the **Q-Learning router** (updateCount / Q-table
+  size / exploration ε / TD-error) and **neural pattern training** (stored
+  patterns / avg confidence / uses);
 - **agents** — filterable table (name, model, profile, tool count, delegation
   roster, role), core/coordinator pills.
 
@@ -292,9 +294,41 @@ Two modes:
   stops it.
 
 Collector + renderers + the loopback server unit/integration-tested
-(`test/dashboard.test.mjs`, 7 tests: reads all signals, empty-workspace
+(`test/dashboard.test.mjs`, 8 tests: reads all signals, empty-workspace
 degradation, self-containment + HTML-escaping of untrusted agent descriptions,
-bare-fragment shape, live-vs-static page markers, and a real ephemeral-port
-server serving `/` `/api/fragment` `/api/data` + 404). Verified live in-browser
-— a `cost add` from the CLI showed up on the open page within one poll (0.15 →
-0.65 credits, no manual reload).
+bare-fragment shape, live-vs-static page markers, the neural-patterns group, and
+a real ephemeral-port server serving `/` `/api/fragment` `/api/data` + 404).
+Verified live in-browser — a `cost add` from the CLI showed up on the open page
+within one poll (0.15 → 0.65 credits, no manual reload).
+
+### The learning panel reads the *live* signals, not `learning.json`
+
+A real run (below) surfaced that `.claude-flow/metrics/learning.json`
+(routing.accuracy / patterns / sessions) is a **near-static snapshot** — it
+stayed all-zero even after real hook-firing agent runs. The genuinely live
+learning surfaces are two ruflo subsystems, and the dashboard reads both:
+
+- **Q-Learning router** (task→agent routing). `ruflo route feedback -t <task>
+  -a <agent> -r <reward>` is the *learning step* (`route task` is inference and
+  does **not** learn). `route stats --json` exposes updateCount / qTableSize /
+  epsilon / avgTDError, which move as it learns and **persist across
+  processes**. The dashboard caches them to
+  `.claude-flow/metrics/router-stats.json` via `refreshRouterStats()` (an async
+  `npx ruflo` spawn, off the poll path — slow; snapshot mode awaits it,
+  `--no-router` skips it, serve mode refreshes on a slow unref'd timer so polls
+  only read the file).
+- **Neural pattern training.** `ruflo neural train -p <coordination|
+  optimization|prediction|security|testing> -e <epochs>` persists cognitive
+  patterns to `.claude-flow/neural/patterns.json` (a plain file — read
+  directly, no shell-out). The dashboard shows count / avg confidence / total
+  uses.
+
+**Proven with a real batch:** 320 `route feedback` steps took updateCount
+0 → 267, epsilon 1.0 → 0.885, avgTDError 0.9 → 0.26 (converging); neural
+training across the 5 pattern types took ReasoningBank 50 → 540 patterns and
+`patterns.json` to 30 entries / 10,503 uses with loss converging ~1.2–2.4e-3.
+Watched the Learning panel climb 106 → 267 Q-updates in-browser with the live
+page open. **Speed trap:** `npx ruflo` cold-start is ~15 s/call — driving a
+batch calls the npx-cached bin directly (`node <cache>/…/ruflo/bin/ruflo.js …`,
+~0.2 s/call). On a machine without `ruflo route` the panel degrades gracefully
+to the `learning.json` fields.
