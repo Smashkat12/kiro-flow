@@ -108,7 +108,8 @@ if command -v kiro-cli &>/dev/null; then
     substep "kiro-cli ${GREEN}$(kiro-cli --version 2>/dev/null | head -1 || echo installed)${NC} ✓"
 else
     warning "kiro-cli not found"
-    substep "Install it from ${BOLD}https://kiro.dev/downloads${NC} (or your employer's software portal)"
+    substep "Install it with: ${BOLD}curl -fsSL https://cli.kiro.dev/install | bash${NC}"
+    substep "(on a governed work machine, prefer your employer's software portal)"
     substep "Continuing anyway — the Kiro IDE alone can use everything this sets up"
 fi
 echo ""

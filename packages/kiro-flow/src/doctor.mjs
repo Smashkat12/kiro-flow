@@ -104,12 +104,11 @@ export async function runDoctor({ dir, checkMcp = true }) {
   const kiro = tryExec('kiro-cli', ['--version']);
   if (kiro.out) {
     add('kiro-cli', 'kiro-cli installed', ok(kiro.out));
-    // auth probe — command surface not fully documented; try the likely candidates
-    let auth = tryExec('kiro-cli', ['whoami']);
-    if (auth.err) auth = tryExec('kiro-cli', ['auth', 'status']);
+    // auth probe — `kiro-cli whoami` verified against kiro-cli 2.10.0
+    const auth = tryExec('kiro-cli', ['whoami']);
     add('kiro-auth', 'Kiro authentication', auth.out !== undefined
       ? ok(auth.out.split('\n')[0])
-      : warn('could not verify (whoami/auth status failed) — headless mode may need KIRO_API_KEY; interactive Kiro unaffected'));
+      : warn('not logged in — run `kiro-cli login` (headless mode may additionally need KIRO_API_KEY)'));
   } else {
     add('kiro-cli', 'kiro-cli installed', fail('not found — install from kiro.dev/downloads (interactive-only dev at home is fine: converted agents + MCP config still work in the IDE)'));
     add('kiro-auth', 'Kiro authentication', skip('kiro-cli missing'));
