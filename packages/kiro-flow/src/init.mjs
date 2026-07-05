@@ -116,6 +116,29 @@ export function buildQueenAgent(coreKfNames) {
   };
 }
 
+/**
+ * kf-deep-researcher — the deep-research plane (M9). Kiro-native web_search/
+ * web_fetch + the researcher tool profile; produces cited reports and
+ * persists findings via memory_store.
+ */
+export function buildDeepResearcherAgent() {
+  const liveCfTools = new Set(JSON.parse(readFileSync(DEFAULT_TOOLS_DATA, 'utf8')));
+  const profiles = JSON.parse(readFileSync(DEFAULT_PROFILES, 'utf8'));
+  const cfNames = expandProfile(profiles.researcher, liveCfTools);
+  if (liveCfTools.has('memory_store') && !cfNames.includes('memory_store')) cfNames.push('memory_store');
+  const cfRefs = cfNames.sort().map((t) => `@claude-flow/${t}`);
+  return {
+    $schema: 'https://github.com/smashkat12/kiro-flow/schemas/kiro-agent.schema.json',
+    name: 'kf-deep-researcher',
+    description: 'ruflo deep-research for Kiro — multi-angle web research with verified citations; findings persisted to claude-flow memory',
+    prompt: 'file://./prompts/kf-deep-researcher.md',
+    tools: ['read', 'write', 'web_search', 'web_fetch', ...cfRefs],
+    allowedTools: ['read', 'web_search', 'web_fetch', ...cfRefs],
+    hooks: buildKfHooks(),
+    includeMcpJson: true,
+  };
+}
+
 function npxRuflo(dir, args) {
   execFileSync('npx', ['-y', RUFLO_SPEC, ...args], {
     cwd: dir,
@@ -203,6 +226,7 @@ export function initWorkspace({ dir, force = false, skipRufloInit = false }) {
   for (const [name, agent] of [
     ['kf-orchestrator', buildOrchestratorAgent(coreKfNames)],
     ['kf-queen', buildQueenAgent(coreKfNames)],
+    ['kf-deep-researcher', buildDeepResearcherAgent()],
   ]) {
     step(`.kiro/agents/${name}.json`, writeIfChanged(
       join(dir, '.kiro', 'agents', `${name}.json`),

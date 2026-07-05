@@ -11,6 +11,7 @@ import { runDoctor, formatDoctorReport } from '../src/doctor.mjs';
 import { daemonCommand, workerCommand, runRuflo, resolveShimDir } from '../src/daemon.mjs';
 import { hiveSpawnCommand } from '../src/hive.mjs';
 import { sessionListCommand, sessionResumeCommand, memoryRefreshCommand } from '../src/session.mjs';
+import { cmdCommand } from '../src/cmd.mjs';
 
 const USAGE = `kiro-flow — ruflo on AWS Kiro
 
@@ -23,6 +24,8 @@ Usage:
   kiro-flow swarm <args...>            ruflo swarm … (coordination; execution = queen/daemon)
   kiro-flow hive-mind spawn [args...]  hive prompt via ruflo, then kiro-cli chat --agent kf-queen
   kiro-flow hive-mind <sub> [args...]  other hive subcommands pass through to ruflo
+  kiro-flow cmd <id|--list> [args...]  run a ruflo command prompt (166 installed) on Kiro
+                                       options: --agent kf-…, --no-interactive, --dry-run
   kiro-flow session list               Kiro chat sessions joined with hook bridge records
   kiro-flow session resume <id>        kiro-cli chat --resume-id <id> [--agent kf-…]
   kiro-flow memory refresh             rebuild the recall cache now (hooks do it detached)
@@ -165,6 +168,25 @@ if (cmd === 'convert' && sub === 'agents') {
     process.exit(1);
   }
   process.exit(runRuflo({ dir: resolve(dir), executor, args: ['hive-mind', sub, ...pass] }));
+} else if (cmd === 'cmd') {
+  if (!sub) {
+    console.error('usage: kiro-flow cmd <id|--list|--list-all> [args...] [--agent kf-…] [--no-interactive] [--dry-run]');
+    process.exit(1);
+  }
+  const { dir, rest: pass } = splitPassthrough(rest);
+  const flags = { agent: undefined, noInteractive: false, dryRun: false };
+  const args = [];
+  for (let i = 0; i < pass.length; i++) {
+    if (pass[i] === '--agent') flags.agent = pass[++i];
+    else if (pass[i] === '--no-interactive') flags.noInteractive = true;
+    else if (pass[i] === '--dry-run') flags.dryRun = true;
+    else args.push(pass[i]);
+  }
+  process.exit(cmdCommand({
+    dir: resolve(dir), name: sub, args,
+    ...(flags.agent ? { agent: flags.agent } : {}),
+    noInteractive: flags.noInteractive, dryRun: flags.dryRun,
+  }));
 } else if (cmd === 'session') {
   const { dir, rest: pass } = splitPassthrough(rest);
   if (sub === 'list') process.exit(sessionListCommand({ dir: resolve(dir) }));
