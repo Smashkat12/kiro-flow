@@ -112,12 +112,27 @@ curl -fsSL https://cdn.jsdelivr.net/gh/smashkat12/kiro-flow@main/scripts/install
 mkdir demo && cd demo
 KIRO_FLOW_LOCAL=<checkout> bash <checkout>/scripts/install.sh   # or the curl one-liner post-publish
 kiro-flow doctor                       # expect: all green (auth check answers unknown #2)
+
+# Skills — port ruflo's skill playbooks onto Kiro's auto-loaded .kiro/skills
+# surface (M11 resources pass). This machine wants ALL skills:
+kiro-flow skills add --all             # installs the full published set (~33 skills)
+kiro-flow skills list                  # confirm ▪ installed + the always-on token total
+
 kiro-cli agent list                    # expect kf-orchestrator + 73 kf-* agents
 kiro-cli chat --agent kf-orchestrator
 #   Prompt: "Fan out: have kf-planner draft a 3-step plan for X and store it in memory."
 #   Expect: subagent call → kf-planner, then @claude-flow/memory_store.
 npx -y ruflo memory search "plan"      # row persisted in .swarm/memory.db
 ```
+
+> **Cost of `skills add --all`:** every `.kiro/skills/*/SKILL.md` auto-loads
+> into **every** agent's context (Kiro globs them in — no per-agent opt-out).
+> The full published set is ~33 skills ≈ **~137k tokens always-on**. On a 200k
+> window that leaves little room for the task + tools; if agents start
+> truncating or feel dull, trim back:
+> `kiro-flow skills remove --all && kiro-flow skills add --core` (curated 4,
+> ~20k), or remove individually (`kiro-flow skills list` shows per-skill cost).
+> Re-run `kiro-flow skills add --all` any time — it is idempotent.
 
 Record in this dossier afterwards: the auth-probe command that worked, and
 whether `kiro-cli agent list` picks up `.kiro/agents/` workspace-locally.
