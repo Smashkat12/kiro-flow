@@ -39,7 +39,7 @@ The thin `kiro-flow` package adds what Kiro needs:
 - [x] M5 — headless executor (kiro-claude-shim) + workers/daemon (live worker sweep through kiro-cli verified, dossier 05)
 - [x] M6 — swarm / hive-mind (kf-queen interactive plane; live hive session on Kiro mutating ruflo's own state store, dossier 06)
 - [x] M7 — ambient memory + session persistence (recall cache + agentSpawn injection; A→B recall verified live, dossier 07)
-- [ ] M8 — self-learning / ReasoningBank
+- [x] M8 — self-learning / ReasoningBank (fail→consolidate→inject loop verified live; kf-judge global + shim routing, dossier 08)
 - [ ] M9 — deep research + command triage
 - [ ] M10 — Powers packaging + distribution
 

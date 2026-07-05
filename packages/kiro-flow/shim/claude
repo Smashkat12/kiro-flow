@@ -90,8 +90,15 @@ function buildKiroArgv(parsed, prompt, env = process.env) {
   args.push(env.KIRO_FLOW_SHIM_TRUST_TOOLS != null
     ? `--trust-tools=${env.KIRO_FLOW_SHIM_TRUST_TOOLS}`
     : '--trust-all-tools');
-  if (env.KIRO_FLOW_SHIM_AGENT) args.push('--agent', env.KIRO_FLOW_SHIM_AGENT);
+  // Judge calls (ruflo's fable harness marks them CLAUDE_ENTRYPOINT=fable-judge
+  // and runs them in an empty temp cwd) route to the globally-installed
+  // kf-judge evaluator agent. KIRO_FLOW_JUDGE_AGENT='' opts out.
+  const judgeAgent = env.KIRO_FLOW_JUDGE_AGENT ?? 'kf-judge';
+  const agent = env.KIRO_FLOW_SHIM_AGENT
+    || (env.CLAUDE_ENTRYPOINT === 'fable-judge' && judgeAgent ? judgeAgent : null);
+  if (agent) args.push('--agent', agent);
   if (env.KIRO_FLOW_SHIM_EFFORT) args.push('--effort', env.KIRO_FLOW_SHIM_EFFORT);
+  else if (env.CLAUDE_ENTRYPOINT === 'fable-judge') args.push('--effort', 'low');
   // Model: explicit --model flag wins, then ANTHROPIC_MODEL (the worker path
   // sets only the env var). Unmappable → omit and let Kiro's `auto` decide.
   const kiroModel = mapModel(parsed.model) ?? mapModel(env.ANTHROPIC_MODEL);

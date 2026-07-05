@@ -11,12 +11,14 @@
  *   5. hook adapter .kiro/kiro-flow/kiro-hook-adapter.cjs (M4 — every generated
  *      agent's hooks delegate through it to ruflo's .claude/helpers kernel)
  *   6. kiro-claude-shim .kiro/kiro-flow/shim/claude (M5 — headless worker plane)
- *   7. kf-orchestrator + kf-queen agents (subagent fan-out / hive-mind plane)
+ *   7. kf-judge → ~/.kiro/agents (global; M8 — judge calls run in a temp cwd)
+ *   8. kf-orchestrator + kf-queen agents (subagent fan-out / hive-mind plane)
  *
  * Every write is compare-before-write, so a second run is a zero-diff no-op.
  */
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -192,7 +194,12 @@ export function initWorkspace({ dir, force = false, skipRufloInit = false }) {
   syncBinShim(dir, 'kiro');
   step('node_modules/.bin/claude → shim', 'ok');
 
-  // 7. orchestrator + queen agents
+  // 7. kf-judge — installed GLOBALLY (~/.kiro/agents): the fable/judge plane
+  // spawns in an empty temp cwd where workspace agents are invisible (M8)
+  const judgeSrc = readFileSync(join(pkgRoot, 'templates', 'agents', 'kf-judge.json'), 'utf8');
+  step('~/.kiro/agents/kf-judge.json (global)', writeIfChanged(join(homedir(), '.kiro', 'agents', 'kf-judge.json'), judgeSrc));
+
+  // 8. orchestrator + queen agents
   for (const [name, agent] of [
     ['kf-orchestrator', buildOrchestratorAgent(coreKfNames)],
     ['kf-queen', buildQueenAgent(coreKfNames)],

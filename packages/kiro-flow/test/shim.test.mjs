@@ -65,6 +65,24 @@ test('model mapping: aliases map, opus degrades to best claude, unknown → null
   assert.equal(mapModel(undefined), null);
 });
 
+test('judge routing: CLAUDE_ENTRYPOINT=fable-judge → global kf-judge at low effort', () => {
+  const parsed = parseClaudeArgv(['-p', '--model', 'claude-fable-5', '--output-format', 'json']);
+  const argv = buildKiroArgv(parsed, 'P', { CLAUDE_ENTRYPOINT: 'fable-judge' });
+  assert.deepEqual(argv, [
+    'chat', '--no-interactive', '--trust-all-tools',
+    '--agent', 'kf-judge', '--effort', 'low', 'P',
+  ]);
+
+  // opt-out and override
+  assert.ok(!buildKiroArgv(parsed, 'P', { CLAUDE_ENTRYPOINT: 'fable-judge', KIRO_FLOW_JUDGE_AGENT: '' }).includes('--agent'));
+  assert.ok(buildKiroArgv(parsed, 'P', { CLAUDE_ENTRYPOINT: 'fable-judge', KIRO_FLOW_JUDGE_AGENT: 'kf-custom' }).includes('kf-custom'));
+
+  // worker calls stay untouched
+  const worker = buildKiroArgv(parseClaudeArgv(['--print']), 'P', { CLAUDE_ENTRYPOINT: 'worker' });
+  assert.ok(!worker.includes('--agent'));
+  assert.ok(!worker.includes('--effort'));
+});
+
 test('env knobs: trust-tools, agent, effort reshape the kiro argv', () => {
   const argv = buildKiroArgv(parseClaudeArgv(['--print']), 'P', {
     KIRO_FLOW_SHIM_TRUST_TOOLS: 'fs_read,fs_write',
