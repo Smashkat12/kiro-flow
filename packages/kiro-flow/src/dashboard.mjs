@@ -14,10 +14,44 @@ import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { promisify } from 'node:util';
 import { readLedger, summarize, creditUsd } from './cost.mjs';
+
+const execFileP = promisify(execFile);
 
 export const DASHBOARD_REL = join('.kiro', 'kiro-flow', 'dashboard.html');
 const SESSIONS_BRIDGE_REL = join('.claude-flow', 'kiro-flow', 'kiro-sessions.json');
+/** Cached Q-Learning router telemetry — the LIVE learning signal (ruflo's
+ *  `route stats`). learning.json is a near-static snapshot; the Q-router's
+ *  updateCount / qTableSize / epsilon-decay / avgTDError actually move as the
+ *  routing intelligence learns, so the dashboard reads a cached copy of it. */
+export const ROUTER_STATS_REL = join('.claude-flow', 'metrics', 'router-stats.json');
+const RUFLO_SPEC = process.env.KIRO_FLOW_RUFLO_SPEC || 'ruflo@~3.23.0';
+
+/** Refresh the cached router stats by shelling out to `ruflo route stats --json`.
+ *  Async + off the poll path (slow npx spawn); best-effort. */
+export async function refreshRouterStats(dir, { timeout = 25000 } = {}) {
+  try {
+    const { stdout } = await execFileP('npx', ['-y', RUFLO_SPEC, 'route', 'stats', '--json'],
+      { cwd: dir, timeout, maxBuffer: 8 * 1024 * 1024 });
+    const j = stdout.slice(stdout.indexOf('{'));
+    const s = (JSON.parse(j).stats) ?? JSON.parse(j);
+    const out = {
+      updateCount: s.updateCount ?? 0, qTableSize: s.qTableSize ?? 0,
+      epsilon: s.epsilon ?? null, avgTDError: s.avgTDError ?? null,
+      totalExperiences: s.totalExperiences ?? 0, ts: new Date().toISOString(),
+    };
+    const p = join(dir, ROUTER_STATS_REL);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, JSON.stringify(out, null, 2));
+    return out;
+  } catch { return readRouterStats(dir); }
+}
+
+/** Read the cached router stats (fast, for live polls). null if never captured. */
+export function readRouterStats(dir) {
+  try { return JSON.parse(readFileSync(join(dir, ROUTER_STATS_REL), 'utf8')); } catch { return null; }
+}
 
 const readJson = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; } };
 const countLines = (p) => { try { return readFileSync(p, 'utf8').split('\n').filter((l) => l.trim()).length; } catch { return 0; } };
@@ -69,8 +103,9 @@ export function collectDashboardData(dir, { now = Date.now() } = {}) {
   data.memory.autoEntries = autoMem ? (Array.isArray(autoMem) ? autoMem.length : Object.keys(autoMem).length) : 0;
   data.memory.pendingInsights = countLines(join(dir, '.claude-flow', 'data', 'pending-insights.jsonl'));
 
-  // learning / metrics
+  // learning / metrics — learning.json (near-static) + the LIVE Q-router stats
   data.learning = readJson(join(dir, '.claude-flow', 'metrics', 'learning.json'));
+  data.router = readRouterStats(dir);
   data.swarmActivity = readJson(join(dir, '.claude-flow', 'metrics', 'swarm-activity.json'));
 
   // hive
@@ -187,16 +222,28 @@ export function renderBody(data) {
   const learn = data.learning ?? {};
   const pat = learn.patterns ?? {};
   const patTotal = (pat.shortTerm ?? 0) + (pat.longTerm ?? 0);
-  const acc = learn.routing?.accuracy ?? learn.routingAccuracy;
   const pct = (v) => (typeof v === 'number' ? `${(v * (v <= 1 ? 100 : 1)).toFixed(0)}%` : null);
-  const learnStats = [
+  const r = data.router;
+  // Lead with the LIVE Q-Learning router signal (updateCount / qTable / epsilon
+  // decay / avgTDError all move as it learns); learning.json fields fill in.
+  const stats = r ? [
+    ['Q-updates', r.updateCount || null],
+    ['Q-table', r.qTableSize || null],
+    ['exploration ε', typeof r.epsilon === 'number' ? r.epsilon.toFixed(2) : null],
+    ['TD-error ↓', typeof r.avgTDError === 'number' ? r.avgTDError.toFixed(2) : null],
+    ['experiences', r.totalExperiences || null],
+  ] : [
     ['patterns', patTotal || null],
     ['pattern quality', pat.quality != null ? pct(pat.quality) : null],
-    ['routing acc.', pct(acc)],
+    ['routing acc.', pct(learn.routing?.accuracy ?? learn.routingAccuracy)],
     ['sessions', learn.sessions?.total ?? null],
     ['pending insights', data.memory.pendingInsights || null],
-  ].filter(([, v]) => v != null && v !== '' && typeof v !== 'object')
-   .map(([k, v]) => `<div class="mini"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join('') || '<p class="muted">no learning metrics yet</p>';
+  ];
+  const learnStats = stats
+    .filter(([, v]) => v != null && v !== '' && typeof v !== 'object')
+    .map(([k, v]) => `<div class="mini"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join('')
+    + (r ? `<p class="muted" style="margin:8px 0 0">Q-Learning router · exploration decays as it learns · lower TD-error = converging${r.ts ? ` · updated ${esc(r.ts.slice(11, 19))}` : ''}</p>` : '')
+    || '<p class="muted">no learning metrics yet — drive routing with <code>ruflo route feedback</code></p>';
 
   return `
   <div class="cards">${overview}</div>
@@ -282,9 +329,18 @@ export function createDashboardServer(dir, interval = 3) {
   });
 }
 
-export function serveDashboard({ dir, port = 4173, interval = 3, open = false, host = '127.0.0.1' }) {
+export function serveDashboard({ dir, port = 4173, interval = 3, open = false, host = '127.0.0.1', router = true }) {
   return new Promise((resolve) => {
     const server = createDashboardServer(dir, interval);
+    // Refresh the Q-router telemetry off the request path (npx spawn is slow) —
+    // once on start, then on a slow cadence; polls just read the cached file.
+    let routerTimer = null;
+    if (router) {
+      const refresh = () => { refreshRouterStats(dir).catch(() => {}); };
+      refresh();
+      routerTimer = setInterval(refresh, Math.max(interval * 1000 * 4, 20000));
+      if (routerTimer.unref) routerTimer.unref();
+    }
     server.on('error', (e) => {
       console.error(`kiro-flow dashboard --serve: ${e.code === 'EADDRINUSE' ? `port ${port} already in use — try --port <n>` : e.message}`);
       resolve(1);
@@ -295,15 +351,16 @@ export function serveDashboard({ dir, port = 4173, interval = 3, open = false, h
       console.log(`  refreshes every ${interval}s · bound to ${host} (loopback only, not network-exposed) · Ctrl-C to stop`);
       if (open) tryOpen(urlStr);
     });
-    const stop = () => { server.close(); console.log('\ndashboard stopped'); resolve(0); };
+    const stop = () => { if (routerTimer) clearInterval(routerTimer); server.close(); console.log('\ndashboard stopped'); resolve(0); };
     process.on('SIGINT', stop);
     process.on('SIGTERM', stop);
   });
 }
 
-/** CLI: `kiro-flow dashboard [--serve [--port N] [--interval N]] [--out <file>] [--open] [--json]`. */
-export function dashboardCommand({ dir, out, open = false, json = false, serve = false, port = 4173, interval = 3 }) {
-  if (serve) return serveDashboard({ dir, port, interval, open });
+/** CLI: `kiro-flow dashboard [--serve [--port N] [--interval N]] [--out <file>] [--open] [--json] [--no-router]`. */
+export async function dashboardCommand({ dir, out, open = false, json = false, serve = false, port = 4173, interval = 3, router = true }) {
+  if (serve) return serveDashboard({ dir, port, interval, open, router });
+  if (router) await refreshRouterStats(dir);   // snapshot: capture fresh Q-router telemetry
   const data = collectDashboardData(dir);
   if (json) { console.log(JSON.stringify(data, null, 2)); return 0; }
   const target = out ?? join(dir, DASHBOARD_REL);

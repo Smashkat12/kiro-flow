@@ -304,6 +304,7 @@ if (cmd === 'convert' && sub === 'agents') {
       open: { type: 'boolean', default: false },
       json: { type: 'boolean', default: false },
       serve: { type: 'boolean', default: false },
+      'no-router': { type: 'boolean', default: false },
       port: { type: 'string' },
       interval: { type: 'string' },
     },
@@ -314,6 +315,7 @@ if (cmd === 'convert' && sub === 'agents') {
     open: values.open,
     json: values.json,
     serve: values.serve,
+    router: ![sub, ...rest].includes('--no-router'),
     ...(values.port ? { port: Number(values.port) } : {}),
     ...(values.interval ? { interval: Math.max(1, Number(values.interval)) } : {}),
   }));
