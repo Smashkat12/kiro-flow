@@ -8,6 +8,7 @@ import { resolve } from 'node:path';
 import { convertAgents } from '../src/convert/agents.mjs';
 import { initWorkspace } from '../src/init.mjs';
 import { runDoctor, formatDoctorReport } from '../src/doctor.mjs';
+import { daemonCommand, workerCommand, resolveShimDir } from '../src/daemon.mjs';
 
 const USAGE = `kiro-flow — ruflo on AWS Kiro
 
@@ -15,6 +16,9 @@ Usage:
   kiro-flow init [options]             ruflo init → convert → MCP + steering + orchestrator
   kiro-flow convert agents [options]   convert .claude/agents personas to .kiro/agents
   kiro-flow doctor [options]           readiness checks (node, kiro-cli, MCP, agents)
+  kiro-flow daemon <sub> [args...]     ruflo daemon with the kiro-claude-shim on PATH
+  kiro-flow worker <args...>           ruflo hooks worker … with the shim on PATH
+  kiro-flow shim-path                  print the shim dir (for manual PATH injection)
 
 Options (init):
   --dir <dir>         target workspace (default: cwd)
@@ -34,7 +38,26 @@ Options (doctor):
   --dir <dir>         workspace to check (default: cwd)
   --no-mcp            skip the live MCP handshake (slow on cold npx cache)
   --json              machine-readable output
+
+Options (daemon/worker):
+  --dir <dir>         workspace (default: cwd)
+  --executor <x>      kiro | claude | mock (default: kiro)
+                      kiro = workers run via kiro-cli through the shim;
+                      claude = native Claude Code; mock = deterministic, no LLM
+  (remaining args pass through to ruflo daemon / ruflo hooks worker)
 `;
+
+/** Split our wrapper flags from args destined for the wrapped ruflo command. */
+function splitPassthrough(argv) {
+  const ours = { dir: '.', executor: 'kiro' };
+  const rest = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--dir') ours.dir = argv[++i];
+    else if (argv[i] === '--executor') ours.executor = argv[++i];
+    else rest.push(argv[i]);
+  }
+  return { ...ours, rest };
+}
 
 const [cmd, sub, ...rest] = process.argv.slice(2);
 
@@ -102,6 +125,18 @@ if (cmd === 'convert' && sub === 'agents') {
   const { checks, failed } = await runDoctor({ dir: resolve(values.dir), checkMcp: values.mcp });
   console.log(values.json ? JSON.stringify({ checks, failed }, null, 2) : formatDoctorReport(checks));
   process.exit(failed ? 1 : 0);
+} else if (cmd === 'daemon') {
+  if (!sub) {
+    console.error(`usage: kiro-flow daemon <start|stop|status|trigger|enable> [args...]`);
+    process.exit(1);
+  }
+  const { dir, executor, rest: pass } = splitPassthrough(rest);
+  process.exit(daemonCommand({ dir: resolve(dir), executor, sub, rest: pass }));
+} else if (cmd === 'worker') {
+  const { dir, executor, rest: pass } = splitPassthrough([sub, ...rest].filter((a) => a !== undefined));
+  process.exit(workerCommand({ dir: resolve(dir), executor, rest: pass }));
+} else if (cmd === 'shim-path') {
+  console.log(resolveShimDir(resolve(sub === '--dir' ? rest[0] ?? '.' : '.')));
 } else if (cmd === '--help' || cmd === '-h' || cmd === undefined || cmd === 'help') {
   console.log(USAGE);
 } else {

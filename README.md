@@ -36,7 +36,7 @@ The thin `kiro-flow` package adds what Kiro needs:
 - [x] M2 — agent library conversion (88 from repo corpus / 73 from published bundle)
 - [x] M3 — `kiro-flow init` + `kiro-flow doctor` + install.sh (work-side demo pending)
 - [x] M4 — hooks mapping (kiro-hook-adapter → unmodified ruflo kernel; verified live incl. safety block, dossier 04)
-- [ ] M5 — headless executor (kiro-claude-shim) + workers/daemon
+- [x] M5 — headless executor (kiro-claude-shim) + workers/daemon (live worker sweep through kiro-cli verified, dossier 05)
 - [ ] M6 — swarm / hive-mind
 - [ ] M7 — ambient memory + session persistence
 - [ ] M8 — self-learning / ReasoningBank

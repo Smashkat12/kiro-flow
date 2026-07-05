@@ -1,0 +1,4 @@
+{
+  "type": "commonjs",
+  "//": "The extensionless `claude` executable must parse as CJS despite the kiro-flow package being type:module. This file scopes the shim directory back to commonjs."
+}

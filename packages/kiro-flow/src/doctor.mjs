@@ -7,7 +7,7 @@
  * ok/warn/fail/skip with a detail string; exit is 1 only on `fail`.
  */
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { accessSync, constants as fsConstants, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ok = (detail) => ({ status: 'ok', detail });
@@ -170,6 +170,22 @@ export async function runDoctor({ dir, checkMcp = true }) {
       : fail('.kiro/kiro-flow/kiro-hook-adapter.cjs missing but agents reference it — run kiro-flow init'));
   } else {
     add('hooks', 'hook adapter + ruflo handlers', skip('no agent hooks configured'));
+  }
+
+  // headless executor: shim present + executable, and a backend to route to
+  const shim = join(dir, '.kiro', 'kiro-flow', 'shim', 'claude');
+  if (existsSync(shim)) {
+    let executable = false;
+    try { accessSync(shim, fsConstants.X_OK); executable = true; } catch { /* not executable */ }
+    if (!executable) {
+      add('executor', 'kiro-claude-shim (headless workers)', fail(`${shim} is not executable — chmod +x or rerun kiro-flow init`));
+    } else if (kiro.out) {
+      add('executor', 'kiro-claude-shim (headless workers)', ok(`${shim} → kiro-cli (use: kiro-flow daemon start)`));
+    } else {
+      add('executor', 'kiro-claude-shim (headless workers)', warn('shim installed but kiro-cli missing — workers can only run with --executor claude|mock'));
+    }
+  } else {
+    add('executor', 'kiro-claude-shim (headless workers)', skip('not installed — run kiro-flow init (needed only for the background worker plane)'));
   }
 
   return { checks, failed: checks.some((c) => c.status === 'fail') };

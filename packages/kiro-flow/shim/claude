@@ -1,0 +1,214 @@
+#!/usr/bin/env node
+/**
+ * kiro-claude-shim — a `claude` CLI stand-in that routes ruflo's headless
+ * worker spawns to `kiro-cli chat --no-interactive`.
+ *
+ * ruflo's daemon/worker plane spawns the literal binary name `claude`
+ * (PATH lookup), in exactly two shapes (dossier 05, read from the pinned
+ * 3.23 source):
+ *
+ *   1. workers:  claude --print            (prompt on stdin, plain text out,
+ *                                           ANTHROPIC_MODEL=haiku|sonnet|opus env)
+ *   2. fable:    claude -p --model <id> --output-format json
+ *                       --append-system-prompt <sys> --max-budget-usd <n>
+ *                                          (prompt on stdin, JSON envelope out)
+ *   plus the availability probe `claude --version` (exit 0 is all that matters).
+ *
+ * `kiro-flow daemon/worker` prepends this file's directory to PATH so the
+ * unmodified ruflo executor finds us instead of Claude Code.
+ *
+ * Env knobs:
+ *   KIRO_FLOW_EXECUTOR=mock       deterministic canned output, no kiro-cli
+ *   KIRO_FLOW_SHIM_AGENT          --agent for the spawned kiro-cli chat
+ *   KIRO_FLOW_SHIM_TRUST_TOOLS    --trust-tools=<list> instead of --trust-all-tools
+ *   KIRO_FLOW_SHIM_EFFORT         --effort for the spawned chat
+ *   KIRO_FLOW_MODEL_MAP           JSON object merged over the default model map
+ *   KIRO_FLOW_CREDIT_USD          USD per Kiro credit → emits total_cost_usd
+ */
+'use strict';
+
+const { spawnSync } = require('node:child_process');
+
+const SHIM_VERSION = '0.1.0';
+
+// claude aliases/ids → Kiro model ids (kiro-cli chat --list-models, 2.10.0).
+// No Opus tier exists on Kiro — best available Claude is the documented fallback.
+const DEFAULT_MODEL_MAP = {
+  haiku: 'claude-haiku-4.5',
+  sonnet: 'claude-sonnet-4.5',
+  opus: 'claude-sonnet-4.5',
+  'sonnet[1m]': 'claude-sonnet-4.5',
+  'claude-haiku-4.5': 'claude-haiku-4.5',
+  'claude-sonnet-4.5': 'claude-sonnet-4.5',
+  'claude-sonnet-4': 'claude-sonnet-4',
+};
+
+function modelMap() {
+  let extra = {};
+  try { extra = JSON.parse(process.env.KIRO_FLOW_MODEL_MAP || '{}'); } catch { /* ignore */ }
+  return { ...DEFAULT_MODEL_MAP, ...extra };
+}
+
+/** Map a claude model name to a Kiro model id, or null for "let Kiro pick (auto)". */
+function mapModel(name) {
+  if (!name) return null;
+  return modelMap()[String(name).toLowerCase()] ?? null;
+}
+
+/**
+ * Parse the claude headless argv surface. Unknown flags are collected, not
+ * fatal — the shim's job is to never break a worker over a flag it can ignore.
+ */
+function parseClaudeArgv(argv) {
+  const VALUE_FLAGS = new Set([
+    '--model', '--output-format', '--append-system-prompt', '--max-budget-usd',
+    '--allowedTools', '--allowed-tools', '--permission-mode', '--fallback-model',
+    '--session-id', '--resume', '--mcp-config', '--max-turns', '--input-format',
+    '--add-dir', '--settings',
+  ]);
+  const out = {
+    version: false, print: false, model: null, outputFormat: 'text',
+    systemPrompt: null, positionalPrompt: null, ignored: [],
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--version' || a === '-v') out.version = true;
+    else if (a === '--print' || a === '-p') out.print = true;
+    else if (a === '--model') out.model = argv[++i];
+    else if (a === '--output-format') out.outputFormat = argv[++i] ?? 'text';
+    else if (a === '--append-system-prompt') out.systemPrompt = argv[++i] ?? null;
+    else if (VALUE_FLAGS.has(a)) out.ignored.push(`${a} ${argv[++i] ?? ''}`);
+    else if (a.startsWith('-')) out.ignored.push(a);
+    else out.positionalPrompt = out.positionalPrompt == null ? a : `${out.positionalPrompt} ${a}`;
+  }
+  return out;
+}
+
+/** Build the kiro-cli chat argv for a parsed claude invocation. */
+function buildKiroArgv(parsed, prompt, env = process.env) {
+  const args = ['chat', '--no-interactive'];
+  args.push(env.KIRO_FLOW_SHIM_TRUST_TOOLS != null
+    ? `--trust-tools=${env.KIRO_FLOW_SHIM_TRUST_TOOLS}`
+    : '--trust-all-tools');
+  if (env.KIRO_FLOW_SHIM_AGENT) args.push('--agent', env.KIRO_FLOW_SHIM_AGENT);
+  if (env.KIRO_FLOW_SHIM_EFFORT) args.push('--effort', env.KIRO_FLOW_SHIM_EFFORT);
+  // Model: explicit --model flag wins, then ANTHROPIC_MODEL (the worker path
+  // sets only the env var). Unmappable → omit and let Kiro's `auto` decide.
+  const kiroModel = mapModel(parsed.model) ?? mapModel(env.ANTHROPIC_MODEL);
+  if (kiroModel) args.push('--model', kiroModel);
+  args.push(prompt);
+  return args;
+}
+
+/**
+ * kiro-cli decorates output for terminals: ANSI/CSI/OSC sequences, spinner
+ * frames ("N of N hooks finished"), a "> " response marker, and a
+ * "▸ Credits: … Time: …" footer. Reduce all of that to the response text.
+ */
+function cleanKiroOutput(raw) {
+  let s = String(raw ?? '');
+  s = s.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, ''); // OSC ... BEL/ST
+  s = s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, ''); // CSI
+  s = s.replace(/\x1b./g, ''); // stray two-byte escapes
+  s = s.replace(/\r/g, '\n');
+  const lines = s.split('\n').map((l) => l.replace(/^\s*>\s?/, ''));
+  const kept = lines.filter((l) => {
+    const t = l.trim();
+    if (/^[\u2800-\u28ff\u2713]*\s*\d+ of \d+ hooks finished/.test(t)) return false;
+    if (/^\u25b8\s*Credits:/.test(t)) return false;
+    return true;
+  });
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** Pull the credit spend out of kiro-cli's footer, if present. */
+function parseCredits(raw) {
+  const m = /Credits:\s*([\d.]+)/.exec(String(raw ?? ''));
+  return m ? Number(m[1]) : undefined;
+}
+
+/** The `claude -p --output-format json` result envelope ruflo parses. */
+function buildEnvelope({ text, exitCode, credits, sessionId }) {
+  const env = {
+    type: 'result',
+    subtype: exitCode === 0 ? 'success' : 'error_during_execution',
+    is_error: exitCode !== 0,
+    result: text,
+    session_id: sessionId ?? null,
+  };
+  if (credits != null) {
+    env.kiro_credits = credits;
+    const usd = Number(process.env.KIRO_FLOW_CREDIT_USD);
+    if (Number.isFinite(usd) && usd > 0) env.total_cost_usd = credits * usd;
+  }
+  return env;
+}
+
+function emit(parsed, { text, exitCode, credits }) {
+  if (parsed.outputFormat === 'json') {
+    process.stdout.write(JSON.stringify(buildEnvelope({ text, exitCode, credits })) + '\n');
+  } else if (parsed.outputFormat === 'stream-json') {
+    // Minimal stream: init + result events (one JSON per line). Enough for
+    // consumers that scan for the result line; documented degradation.
+    process.stdout.write(JSON.stringify({ type: 'system', subtype: 'init', shim: `kiro-claude-shim ${SHIM_VERSION}` }) + '\n');
+    process.stdout.write(JSON.stringify(buildEnvelope({ text, exitCode, credits })) + '\n');
+  } else {
+    process.stdout.write(text + (text.endsWith('\n') ? '' : '\n'));
+  }
+}
+
+function main() {
+  const parsed = parseClaudeArgv(process.argv.slice(2));
+
+  if (parsed.version) {
+    // ruflo only requires exit 0; the string is informational.
+    process.stdout.write(`2.1.0 (kiro-claude-shim ${SHIM_VERSION}; backend: kiro-cli)\n`);
+    process.exit(0);
+  }
+
+  let stdinPrompt = '';
+  if (!process.stdin.isTTY) {
+    try { stdinPrompt = require('node:fs').readFileSync(0, 'utf8'); } catch { /* no stdin */ }
+  }
+  const userPrompt = (stdinPrompt.trim() ? stdinPrompt : parsed.positionalPrompt) ?? '';
+  if (!userPrompt.trim()) {
+    process.stderr.write('kiro-claude-shim: empty prompt (nothing on stdin or argv)\n');
+    process.exit(1);
+  }
+  const prompt = parsed.systemPrompt ? `${parsed.systemPrompt}\n\n${userPrompt}` : userPrompt;
+
+  if (process.env.KIRO_FLOW_EXECUTOR === 'mock') {
+    emit(parsed, {
+      text: `MOCK-EXECUTOR ok (prompt ${prompt.length} chars)`,
+      exitCode: 0,
+      credits: 0,
+    });
+    process.exit(0);
+  }
+
+  const kiroArgv = buildKiroArgv(parsed, prompt);
+  const res = spawnSync('kiro-cli', kiroArgv, {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    env: process.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  if (res.error) {
+    process.stderr.write(`kiro-claude-shim: failed to spawn kiro-cli: ${res.error.message}\n`);
+    process.exit(127);
+  }
+
+  const raw = (res.stdout || '') + (res.stderr ? `\n${res.stderr}` : '');
+  const text = cleanKiroOutput(res.stdout || '') || cleanKiroOutput(raw);
+  const exitCode = res.status ?? 1;
+  emit(parsed, { text, exitCode, credits: parseCredits(raw) });
+  if (exitCode !== 0 && res.stderr) process.stderr.write(cleanKiroOutput(res.stderr) + '\n');
+  process.exit(exitCode);
+}
+
+module.exports = {
+  parseClaudeArgv, buildKiroArgv, cleanKiroOutput, parseCredits, buildEnvelope,
+  mapModel, DEFAULT_MODEL_MAP, SHIM_VERSION,
+};
+if (require.main === module) main();

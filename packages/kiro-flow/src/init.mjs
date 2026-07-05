@@ -10,12 +10,13 @@
  *   4. steering file .kiro/steering/ruflo.md
  *   5. hook adapter .kiro/kiro-flow/kiro-hook-adapter.cjs (M4 — every generated
  *      agent's hooks delegate through it to ruflo's .claude/helpers kernel)
- *   6. kf-orchestrator agent (subagent fan-out to the core 12)
+ *   6. kiro-claude-shim .kiro/kiro-flow/shim/claude (M5 — headless worker plane)
+ *   7. kf-orchestrator agent (subagent fan-out to the core 12)
  *
  * Every write is compare-before-write, so a second run is a zero-diff no-op.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -144,7 +145,15 @@ export function initWorkspace({ dir, force = false, skipRufloInit = false }) {
   const adapter = readFileSync(join(pkgRoot, 'templates', 'kiro-hook-adapter.cjs'), 'utf8');
   step(HOOK_ADAPTER_REL, writeIfChanged(join(dir, HOOK_ADAPTER_REL), adapter));
 
-  // 6. orchestrator agent
+  // 6. kiro-claude-shim (headless worker plane — M5). The binary must be named
+  // exactly `claude` and be executable for ruflo's PATH-lookup spawns to hit it.
+  const shimDest = join(dir, '.kiro', 'kiro-flow', 'shim');
+  const shimStatus = writeIfChanged(join(shimDest, 'claude'), readFileSync(join(pkgRoot, 'shim', 'claude'), 'utf8'));
+  chmodSync(join(shimDest, 'claude'), 0o755);
+  writeIfChanged(join(shimDest, 'package.json'), readFileSync(join(pkgRoot, 'shim', 'package.json'), 'utf8'));
+  step('.kiro/kiro-flow/shim/claude', shimStatus);
+
+  // 7. orchestrator agent
   const orchestrator = buildOrchestratorAgent(coreKfNames);
   step('.kiro/agents/kf-orchestrator.json', writeIfChanged(
     join(dir, '.kiro', 'agents', 'kf-orchestrator.json'),
