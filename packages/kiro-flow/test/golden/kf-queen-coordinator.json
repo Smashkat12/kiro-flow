@@ -12,6 +12,7 @@
     "grep",
     "thinking",
     "todo",
+    "subagent",
     "@claude-flow/agent_execute",
     "@claude-flow/agent_health",
     "@claude-flow/agent_list",
@@ -164,6 +165,36 @@
     "@claude-flow/task_summary",
     "@claude-flow/task_update"
   ],
+  "toolsSettings": {
+    "subagent": {
+      "availableAgents": [
+        "kf-backend-dev",
+        "kf-code-analyzer",
+        "kf-coder",
+        "kf-collective-intelligence-coordinator",
+        "kf-goal-planner",
+        "kf-planner",
+        "kf-pr-manager",
+        "kf-researcher",
+        "kf-reviewer",
+        "kf-swarm-memory-manager",
+        "kf-tester"
+      ],
+      "trustedAgents": [
+        "kf-backend-dev",
+        "kf-code-analyzer",
+        "kf-coder",
+        "kf-collective-intelligence-coordinator",
+        "kf-goal-planner",
+        "kf-planner",
+        "kf-pr-manager",
+        "kf-researcher",
+        "kf-reviewer",
+        "kf-swarm-memory-manager",
+        "kf-tester"
+      ]
+    }
+  },
   "hooks": {
     "agentSpawn": [
       {

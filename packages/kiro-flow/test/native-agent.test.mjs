@@ -13,7 +13,7 @@ import { convertAgents } from '../src/convert/agents.mjs';
 import { parseModels } from '../src/doctor.mjs';
 import {
   NATIVE_TOOLS, NATIVE_TOOLS_BY_PROFILE, nativeToolsFor,
-  DEFAULT_MODEL_MAP, MODEL_TIER_BY_PROFILE, modelFor,
+  DEFAULT_MODEL_MAP, MODEL_TIER_BY_PROFILE, modelFor, isCoordinator,
 } from '../src/convert/tool-map.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -55,6 +55,41 @@ test('modelFor: a workspace override map re-routes tiers', () => {
   const override = { ...DEFAULT_MODEL_MAP, strong: 'glm-5', fast: 'qwen3-coder-next' };
   assert.equal(modelFor('coder', 'core', override), 'glm-5');
   assert.equal(modelFor('x', 'worker', override), null); // balanced still omitted
+});
+
+// ── #1 native subagent delegation ──
+
+test('isCoordinator: needs both a coordination profile and a coordinator-ish name', () => {
+  assert.ok(isCoordinator('queen-coordinator', 'core'));
+  assert.ok(isCoordinator('raft-manager', 'core'));
+  assert.ok(isCoordinator('dual-orchestrator', 'core'));
+  assert.ok(!isCoordinator('pr-manager', 'github'), 'name matches but wrong profile → leaf');
+  assert.ok(!isCoordinator('matrix-optimizer', 'core'), 'core profile but not a coordinator name → leaf');
+  assert.ok(!isCoordinator('backend-dev', 'worker'));
+});
+
+test('coordinators get a native subagent delegation roster; leaves do not', { skip: !hasCorpus }, () => {
+  const { agents } = convertAgents({ source: CORPUS, out: '/nonexistent', write: false });
+  const names = new Set(agents.map(({ json }) => json.name));
+  const coordinators = agents.filter(({ json }) => json.toolsSettings?.subagent);
+  assert.ok(coordinators.length >= 5, 'expected a handful of coordinators');
+
+  for (const { json } of coordinators) {
+    assert.ok(json.tools.includes('subagent'), `${json.name}: coordinator missing subagent tool`);
+    const { availableAgents, trustedAgents } = json.toolsSettings.subagent;
+    assert.deepEqual(availableAgents, trustedAgents, `${json.name}: roster should be fully trusted`);
+    assert.ok(availableAgents.length > 0, `${json.name}: empty roster`);
+    for (const r of availableAgents) {
+      assert.ok(names.has(r), `${json.name}: roster references non-existent agent ${r}`);
+      assert.notEqual(r, json.name, `${json.name}: must not delegate to itself`);
+    }
+  }
+  // a leaf agent (worker) has neither the tool nor the settings
+  const leaf = agents.find(({ json }) => json.name === 'kf-backend-dev');
+  if (leaf) {
+    assert.ok(!leaf.json.toolsSettings, 'kf-backend-dev should stay a leaf');
+    assert.ok(!leaf.json.tools.includes('subagent'), 'leaf should not advertise subagent');
+  }
 });
 
 test('doctor parseModels: extracts ids from real --list-models output', () => {

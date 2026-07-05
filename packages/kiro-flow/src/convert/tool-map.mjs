@@ -160,6 +160,26 @@ export const CORE_AGENT_PREFERENCE = [
 
 export const CORE_TARGET = 12;
 
+/**
+ * M11 #1 — which agents coordinate others, so they get a native Kiro subagent
+ * delegation roster (`tools: [..., 'subagent']` +
+ * `toolsSettings.subagent.{availableAgents,trustedAgents}`). Verified on
+ * kiro-cli 2.10.0: the config tool name `subagent` is what actually enables the
+ * runtime `use_subagent` fan-out tool (`delegate` does not).
+ *
+ * Predicate = coordination profile AND a coordinator-ish name. The `core`
+ * profile alone is too broad — categories like sublinear/dual-mode map to core
+ * but hold leaf agents (matrix-optimizer, codex-worker); requiring the name to
+ * read as coordinator/orchestrator/manager/queen keeps it to genuine
+ * orchestrators. Leaves stay leaves (they still delegate via the flagship
+ * kf-orchestrator/kf-queen).
+ */
+export const COORDINATOR_PROFILES = new Set(['core']);
+export const COORDINATOR_NAME = /(coordinator|orchestrator|manager|queen)/;
+export function isCoordinator(name, profileKey) {
+  return COORDINATOR_PROFILES.has(profileKey) && COORDINATOR_NAME.test(name);
+}
+
 /** Pick up to CORE_TARGET core agents (by preference order) from those present. */
 export function selectCoreAgents(presentNames) {
   const present = new Set(presentNames);

@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { parseFrontmatter, parseToolList } from './frontmatter.mjs';
 import {
   CATEGORY_PROFILE, NAME_PROFILE, VERIFY_AT_WORK, mapToolName, selectCoreAgents,
-  NATIVE_TOOLS, nativeToolsFor, modelFor, DEFAULT_MODEL_MAP,
+  NATIVE_TOOLS, nativeToolsFor, modelFor, DEFAULT_MODEL_MAP, isCoordinator,
 } from './tool-map.mjs';
 
 const pkgRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
@@ -138,10 +138,21 @@ export function buildAgent({ name, attrs, body, category }, ctx) {
 
   const cfRefs = [...cfTools].sort().map((t) => `@claude-flow/${t}`);
   const nativeTools = nativeToolsFor(profileKey);              // M11 #2
-  const tools = sortToolRefs([...BASE_BUILTINS, ...nativeTools, ...extraRefs, ...cfRefs]);
+  const model = modelFor(name, profileKey, ctx.modelMap);     // M11 #3
+
+  // M11 #1 — coordinators get a native subagent delegation roster (the core
+  // agents present in this workspace, minus self). Non-coordinators stay leaves.
+  const roster = isCoordinator(name, profileKey)
+    ? (ctx.coreRoster ?? []).filter((r) => r !== kfName)
+    : [];
+  const fanOut = roster.length ? ['subagent'] : [];
+  if (roster.length) {
+    report.verifyAtWork.push(`${kfName}: native subagent delegation over ${roster.length} agents (verify fan-out on employer Kiro)`);
+  }
+
+  const tools = sortToolRefs([...BASE_BUILTINS, ...nativeTools, ...fanOut, ...extraRefs, ...cfRefs]);
   // native tools are all read-only / side-effect-free → safe to pre-trust
   const allowedTools = ['read', ...nativeTools, ...cfRefs];
-  const model = modelFor(name, profileKey, ctx.modelMap);     // M11 #3
 
   const description = (attrs.description ?? '').replace(/\s+/g, ' ').trim() || name;
   const json = {
@@ -152,6 +163,7 @@ export function buildAgent({ name, attrs, body, category }, ctx) {
     ...(model ? { model } : {}),
     tools,
     allowedTools,
+    ...(roster.length ? { toolsSettings: { subagent: { availableAgents: roster, trustedAgents: roster } } } : {}),
     ...(ctx.hooks ? { hooks: buildKfHooks() } : {}),
     includeMcpJson: true,
   };
@@ -233,8 +245,11 @@ export function convertAgents(opts) {
   }
 
   // ── build + emit ──
-  const ctx = { liveCfTools, profiles, inlinePrompts, hooks, modelMap, report, profileCache: new Map() };
-  const coreSet = new Set(selectCoreAgents([...byName.keys()]));
+  const coreNames = selectCoreAgents([...byName.keys()]);
+  const coreSet = new Set(coreNames);
+  // the delegation roster coordinators fan out to: the core agents present here
+  const coreRoster = coreNames.map((n) => `kf-${n}`).sort();
+  const ctx = { liveCfTools, profiles, inlinePrompts, hooks, modelMap, coreRoster, report, profileCache: new Map() };
   const manifest = [];
   const agents = [];
   for (const p of [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))) {
