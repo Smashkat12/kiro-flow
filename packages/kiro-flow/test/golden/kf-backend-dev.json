@@ -89,5 +89,42 @@
     "@claude-flow/task_summary",
     "@claude-flow/task_update"
   ],
+  "hooks": {
+    "agentSpawn": [
+      {
+        "command": "node .kiro/kiro-flow/kiro-hook-adapter.cjs session-restore auto-memory:import"
+      }
+    ],
+    "userPromptSubmit": [
+      {
+        "command": "node .kiro/kiro-flow/kiro-hook-adapter.cjs route"
+      }
+    ],
+    "preToolUse": [
+      {
+        "matcher": "execute_bash",
+        "command": "node .kiro/kiro-flow/kiro-hook-adapter.cjs pre-bash"
+      },
+      {
+        "matcher": "fs_write",
+        "command": "node .kiro/kiro-flow/kiro-hook-adapter.cjs pre-edit"
+      }
+    ],
+    "postToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "node .kiro/kiro-flow/kiro-hook-adapter.cjs post-edit"
+      },
+      {
+        "matcher": "execute_bash",
+        "command": "node .kiro/kiro-flow/kiro-hook-adapter.cjs post-bash"
+      }
+    ],
+    "stop": [
+      {
+        "command": "node .kiro/kiro-flow/kiro-hook-adapter.cjs session-end auto-memory:sync"
+      }
+    ]
+  },
   "includeMcpJson": true
 }

@@ -35,7 +35,7 @@ The thin `kiro-flow` package adds what Kiro needs:
 - [x] M1 — ruflo MCP server registered in Kiro (350 tools; work-side checklist pending)
 - [x] M2 — agent library conversion (88 from repo corpus / 73 from published bundle)
 - [x] M3 — `kiro-flow init` + `kiro-flow doctor` + install.sh (work-side demo pending)
-- [ ] M4 — hooks mapping
+- [x] M4 — hooks mapping (kiro-hook-adapter → unmodified ruflo kernel; verified live incl. safety block, dossier 04)
 - [ ] M5 — headless executor (kiro-claude-shim) + workers/daemon
 - [ ] M6 — swarm / hive-mind
 - [ ] M7 — ambient memory + session persistence

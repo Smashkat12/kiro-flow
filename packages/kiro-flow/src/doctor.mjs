@@ -154,6 +154,24 @@ export async function runDoctor({ dir, checkMcp = true }) {
     add('agents', 'converted kf-* agents', fail('.kiro/agents missing — run kiro-flow init'));
   }
 
+  // hook plumbing: agents reference the adapter; adapter delegates to ruflo's helpers
+  const adapterPath = join(dir, '.kiro', 'kiro-flow', 'kiro-hook-adapter.cjs');
+  const handlerPath = join(dir, '.claude', 'helpers', 'hook-handler.cjs');
+  const agentsReferenceAdapter = existsSync(join(dir, '.kiro', 'agents'))
+    && readdirSync(join(dir, '.kiro', 'agents')).some((f) => {
+      if (!f.endsWith('.json')) return false;
+      try { return JSON.stringify(JSON.parse(readFileSync(join(dir, '.kiro', 'agents', f), 'utf8')).hooks ?? {}).includes('kiro-hook-adapter'); } catch { return false; }
+    });
+  if (agentsReferenceAdapter) {
+    add('hooks', 'hook adapter + ruflo handlers', existsSync(adapterPath)
+      ? (existsSync(handlerPath)
+        ? ok(`${adapterPath} → .claude/helpers/hook-handler.cjs`)
+        : warn('.claude/helpers/hook-handler.cjs missing — hooks will no-op (run kiro-flow init to restore ruflo helpers)'))
+      : fail('.kiro/kiro-flow/kiro-hook-adapter.cjs missing but agents reference it — run kiro-flow init'));
+  } else {
+    add('hooks', 'hook adapter + ruflo handlers', skip('no agent hooks configured'));
+  }
+
   return { checks, failed: checks.some((c) => c.status === 'fail') };
 }
 

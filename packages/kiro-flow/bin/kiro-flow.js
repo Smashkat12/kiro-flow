@@ -25,6 +25,7 @@ Options (convert agents):
   --source <dir>      persona dir (default: .claude/agents)
   --out <dir>         output dir (default: .kiro/agents)
   --inline-prompts    embed prompt text in agent JSON instead of file://
+  --no-hooks          skip the kf hook block (adapter → ruflo hook handlers)
   --dry-run           report only, write nothing
   --profiles <file>   tool-profiles.json override
   --tools-data <file> claude-flow tool-name list override
@@ -44,15 +45,18 @@ if (cmd === 'convert' && sub === 'agents') {
       source: { type: 'string', default: '.claude/agents' },
       out: { type: 'string', default: '.kiro/agents' },
       'inline-prompts': { type: 'boolean', default: false },
+      hooks: { type: 'boolean', default: true },
       'dry-run': { type: 'boolean', default: false },
       profiles: { type: 'string' },
       'tools-data': { type: 'string' },
     },
+    allowNegative: true,
   });
   const { report } = convertAgents({
     source: resolve(values.source),
     out: resolve(values.out),
     inlinePrompts: values['inline-prompts'],
+    hooks: values.hooks,
     write: !values['dry-run'],
     ...(values.profiles ? { profilesPath: resolve(values.profiles) } : {}),
     ...(values['tools-data'] ? { toolsDataPath: resolve(values['tools-data']) } : {}),

@@ -26,6 +26,31 @@ export const DEFAULT_PROFILES = join(pkgRoot, 'templates', 'tool-profiles.json')
 
 const BASE_BUILTINS = ['read', 'write', 'shell'];
 
+/** Where init copies the hook adapter, relative to the workspace root. */
+export const HOOK_ADAPTER_REL = '.kiro/kiro-flow/kiro-hook-adapter.cjs';
+
+/**
+ * The standard kf hook block: mirrors the hooks `ruflo init` writes into
+ * .claude/settings.json, mapped onto Kiro's 5 events through the adapter
+ * (dossier 04). Same shape for every agent so sites stay diffable.
+ */
+export function buildKfHooks() {
+  const run = (...specs) => `node ${HOOK_ADAPTER_REL} ${specs.join(' ')}`;
+  return {
+    agentSpawn: [{ command: run('session-restore', 'auto-memory:import') }],
+    userPromptSubmit: [{ command: run('route') }],
+    preToolUse: [
+      { matcher: 'execute_bash', command: run('pre-bash') },
+      { matcher: 'fs_write', command: run('pre-edit') },
+    ],
+    postToolUse: [
+      { matcher: 'fs_write', command: run('post-edit') },
+      { matcher: 'execute_bash', command: run('post-bash') },
+    ],
+    stop: [{ command: run('session-end', 'auto-memory:sync') }],
+  };
+}
+
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir)) {
     const p = join(dir, entry);
@@ -116,6 +141,7 @@ export function buildAgent({ name, attrs, body, category }, ctx) {
     prompt: inlinePrompts ? body : `file://./prompts/${kfName}.md`,
     tools,
     allowedTools,
+    ...(ctx.hooks ? { hooks: buildKfHooks() } : {}),
     includeMcpJson: true,
   };
   return { json, promptBody: body, profileKey };
@@ -129,6 +155,7 @@ export function buildAgent({ name, attrs, body, category }, ctx) {
  * @param {string} [opts.toolsDataPath]
  * @param {boolean} [opts.inlinePrompts]
  * @param {boolean} [opts.write=true]  false = dry run (nothing written)
+ * @param {boolean} [opts.hooks=true]  inject the kf hook block (adapter → ruflo handlers)
  */
 export function convertAgents(opts) {
   const {
@@ -137,6 +164,7 @@ export function convertAgents(opts) {
     toolsDataPath = DEFAULT_TOOLS_DATA,
     inlinePrompts = false,
     write = true,
+    hooks = true,
   } = opts;
 
   const liveCfTools = new Set(JSON.parse(readFileSync(toolsDataPath, 'utf8')));
@@ -193,7 +221,7 @@ export function convertAgents(opts) {
   }
 
   // ── build + emit ──
-  const ctx = { liveCfTools, profiles, inlinePrompts, report, profileCache: new Map() };
+  const ctx = { liveCfTools, profiles, inlinePrompts, hooks, report, profileCache: new Map() };
   const coreSet = new Set(selectCoreAgents([...byName.keys()]));
   const manifest = [];
   const agents = [];

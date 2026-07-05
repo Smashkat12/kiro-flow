@@ -8,7 +8,9 @@
  *   3. register the MCP server: workspace mcp.json (CLI) + .kiro/settings/
  *      mcp.json (IDE), server key `claude-flow`, merged non-destructively
  *   4. steering file .kiro/steering/ruflo.md
- *   5. kf-orchestrator agent (subagent fan-out to the core 12)
+ *   5. hook adapter .kiro/kiro-flow/kiro-hook-adapter.cjs (M4 — every generated
+ *      agent's hooks delegate through it to ruflo's .claude/helpers kernel)
+ *   6. kf-orchestrator agent (subagent fan-out to the core 12)
  *
  * Every write is compare-before-write, so a second run is a zero-diff no-op.
  */
@@ -16,7 +18,10 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { convertAgents, expandProfile, DEFAULT_PROFILES, DEFAULT_TOOLS_DATA } from './convert/agents.mjs';
+import {
+  buildKfHooks, convertAgents, expandProfile,
+  DEFAULT_PROFILES, DEFAULT_TOOLS_DATA, HOOK_ADAPTER_REL,
+} from './convert/agents.mjs';
 import { CORE_AGENT_PREFERENCE, CORE_TARGET } from './convert/tool-map.mjs';
 
 const pkgRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -70,6 +75,7 @@ export function buildOrchestratorAgent(coreKfNames) {
     toolsSettings: {
       subagent: { availableAgents: kfCore, trustedAgents: kfCore },
     },
+    hooks: buildKfHooks(),
     includeMcpJson: true,
   };
 }
@@ -134,7 +140,11 @@ export function initWorkspace({ dir, force = false, skipRufloInit = false }) {
   const steering = readFileSync(join(pkgRoot, 'templates', 'steering-ruflo.md'), 'utf8');
   step('.kiro/steering/ruflo.md', writeIfChanged(join(dir, '.kiro', 'steering', 'ruflo.md'), steering));
 
-  // 5. orchestrator agent
+  // 5. hook adapter (agents' hook blocks all point at this file)
+  const adapter = readFileSync(join(pkgRoot, 'templates', 'kiro-hook-adapter.cjs'), 'utf8');
+  step(HOOK_ADAPTER_REL, writeIfChanged(join(dir, HOOK_ADAPTER_REL), adapter));
+
+  // 6. orchestrator agent
   const orchestrator = buildOrchestratorAgent(coreKfNames);
   step('.kiro/agents/kf-orchestrator.json', writeIfChanged(
     join(dir, '.kiro', 'agents', 'kf-orchestrator.json'),
