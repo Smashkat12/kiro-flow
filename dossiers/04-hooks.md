@@ -156,6 +156,41 @@ Live e2e (home, kiro-cli 2.10.0, real ruflo helpers in `test-workspace/m3-e2e`):
 3. `kiro-flow doctor` reports the new `hooks` check green; `kiro-cli agent
    validate` accepts every generated agent with hooks.
 
+## Default agent — hooks on every bare `kiro-cli chat`
+
+Hooks live on the **agent config**, so they fire per-agent. Two planes:
+
+- `kiro-cli chat --agent kf-<name>` → the agent's `hooks` block fires. Verified
+  live: a bare-prompt run printed Kiro's own `✓ 1 of 1 hooks finished` for each
+  of `agentSpawn`, `userPromptSubmit`, `stop`, and a trace confirmed the full
+  spec chains ran (`session-bridge memory-inject session-restore
+  auto-memory:import` on spawn; `route` on prompt; `session-end auto-memory:sync
+  session-bridge memory-refresh` on stop) with `KIRO_SESSION_ID` set.
+- **Bare `kiro-cli chat`** (no `--agent`) → uses the built-in **`kiro_default`**
+  agent (`--agent [default: plain]`), which has **no** hooks. So ambient
+  behaviours don't run on a plain chat.
+
+**Fix (CLI-native "always-on hooks"):** make a kf-* agent the default —
+`kiro-cli agent set-default kf-orchestrator`. Then a bare `kiro-cli chat`
+launches it and its hooks fire on every chat. Verified: after `set-default`,
+`kiro-cli agent list` shows `* kf-orchestrator`, and a bare `kiro-cli chat
+--no-interactive` fired all three lifecycle hooks (Kiro's `✓ … hooks finished`
++ trace). Revert with `kiro-cli agent set-default kiro_default`.
+
+Wired into the installer as opt-in: `kiro-flow init --default-agent <name>`
+runs `set-default` post-init (fail-open — missing kiro-cli or unknown agent
+just prints a skip), threaded through `scripts/install.sh` as `--default-agent`
+/ `-a` and `KIRO_FLOW_DEFAULT_AGENT`. kf-orchestrator is the heavy coordinator
+(80 tools, delegation roster); every converted kf-* carries the identical hook
+block, so a lighter default (e.g. `kf-coder`) gives the same ambient hooks
+without the fan-out weight.
+
+> **Not** the native `.kiro/hooks/**/*.kiro.hook` mechanism. Those are Kiro
+> **IDE** Agent Hooks (file/tool-event triggers) — tested and they do **not**
+> fire in the kiro-cli plane (a candidate hook with `trigger: UserPromptSubmit`
+> never ran under `kiro-cli chat`). For a CLI workflow the default-agent route
+> above is the mechanism; native hooks stay an IDE-only, unexplored surface.
+
 ## Work-side checklist (Kiro laptop, Pro+/SSO)
 
 - [ ] `kiro-flow init` in a scratch repo, then `kiro-cli chat --agent
@@ -163,6 +198,10 @@ Live e2e (home, kiro-cli 2.10.0, real ruflo helpers in `test-workspace/m3-e2e`):
       `.claude-flow/data/graph-state.json` appears (learning substrate live).
 - [ ] Same session: ask it to run `echo 'rm -rf /'` → confirm the
       `PreToolHook blocked` message (safety gate live).
+- [ ] `kiro-flow init --default-agent kf-orchestrator` (or install.sh
+      `--default-agent`), then a **bare** `kiro-cli chat --no-interactive "hi"`
+      (no `--agent`) → confirm Kiro prints `✓ … hooks finished` (ambient hooks
+      on every chat). Employer models mean no model-map override needed.
 - [ ] Kiro **IDE**: confirm agent hooks fire there too (all local findings are
       CLI; IDE hook support/behavior unverified).
 - [ ] Confirm enterprise policy allows agent hooks (some managed setups
