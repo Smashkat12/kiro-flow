@@ -162,14 +162,15 @@ test('flagship agents (orchestrator/queen) route to the opus tier', () => {
   assert.equal(buildOrchestratorAgent(['kf-coder'], 'claude-opus-4.6').model, 'claude-opus-4.6');
 });
 
-test('flagships carry a welcomeMessage + keyboardShortcut; headless agents must not', () => {
+test('flagships carry a welcomeMessage; no inert keyboardShortcut; headless agents have neither', () => {
   const orch = buildOrchestratorAgent(['kf-coder']);
   const queen = buildQueenAgent(['kf-coder']);
   for (const a of [orch, queen]) {
     assert.ok(a.welcomeMessage && a.welcomeMessage.includes(a.name), `${a.name}: welcomeMessage should name the agent`);
-    assert.match(a.keyboardShortcut, /^ctrl\+alt\+[a-z]$/);
+    // keyboardShortcut was dropped M16: Kiro's kiro-agent parser never reads it
+    // (0 occurrences in the extension bundle; live-confirmed inert in the IDE).
+    assert.ok(!('keyboardShortcut' in a), `${a.name}: must not emit the inert keyboardShortcut field`);
   }
-  assert.notEqual(orch.keyboardShortcut, queen.keyboardShortcut, 'shortcuts must be distinct');
   // headless-safety: a welcome would corrupt the shim's parsed output, so the
   // global tool-free judge must NOT have one.
   const judge = JSON.parse(readFileSync(join(here, '..', 'templates', 'agents', 'kf-judge.json'), 'utf8'));

@@ -73,7 +73,6 @@
     },
     "includeMcpJson": { "type": "boolean" },
     "model": { "type": "string" },
-    "keyboardShortcut": { "type": "string" },
     "welcomeMessage": { "type": "string" }
   },
   "$defs": {
