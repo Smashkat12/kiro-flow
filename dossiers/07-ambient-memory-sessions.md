@@ -8,7 +8,7 @@ with **no tool calls** (the answer arrived through injected context).
 ## The mechanism
 
 M4 verified that Kiro injects a hook's stdout into model context on
-`sessionStart` and `userPromptSubmit`. M7 puts memory on that channel.
+`agentSpawn` and `userPromptSubmit`. M7 puts memory on that channel.
 
 The constraint that shaped the design: `npx ruflo memory search` costs
 **15–30 s per call** (CLI startup dominates — measured). That can never sit
@@ -18,7 +18,7 @@ and a slow, detached write path:
 ```
 stop hook ──▶ memory-refresh ──▶ detached `ruflo memory export -o recall-cache.json`
                                           (15–30 s, nobody waits)
-sessionStart ─▶ memory-inject ──▶ read recall-cache.json, lexical top-k vs the
+agentSpawn ─▶ memory-inject ──▶ read recall-cache.json, lexical top-k vs the
                                  spawn prompt, print block   (<10 ms, injected)
 ```
 
@@ -47,7 +47,7 @@ Injected block shape:
 
 | event | chain |
 |---|---|
-| sessionStart | `session-bridge memory-inject session-restore auto-memory:import` (inject early so context lands even if ruflo handlers are slow) |
+| agentSpawn | `session-bridge memory-inject session-restore auto-memory:import` (inject early so context lands even if ruflo handlers are slow) |
 | userPromptSubmit | `route` (fast in-process ranked context, unchanged from M4) |
 | stop | `session-end auto-memory:sync session-bridge memory-refresh` |
 
@@ -58,7 +58,7 @@ in-process, fail-open, no site dependencies.
 
 `session-bridge` records `KIRO_SESSION_ID` (hook env) into
 `.claude-flow/kiro-flow/kiro-sessions.json`: first/last seen, prompt head on
-sessionStart, response head on stop.
+agentSpawn, response head on stop.
 
 - `kiro-flow session list` — joins `kiro-cli chat --list-sessions --format
   json` with the bridge records (● = ruflo hooks were active).
@@ -84,7 +84,7 @@ Automated (`npm test`, 64 pass): path agreement between adapter and CLI;
 scoring (relevant wins, unrelated filtered, prompt-less fallback); block
 formatting; adapter process tests (cache hit injects, missing cache is
 silent + fail-open even with a broken ruflo spec); bridge process test
-(sessionStart records, stop updates); session join (merge, bridge-only rows,
+(agentSpawn records, stop updates); session join (merge, bridge-only rows,
 ordering).
 
 Live (home): session A (`kf-backend-dev`) stored the Fastify decision via

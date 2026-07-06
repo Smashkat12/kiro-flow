@@ -96,7 +96,7 @@
     "@claude-flow/task_update"
   ],
   "hooks": {
-    "sessionStart": [
+    "agentSpawn": [
       {
         "command": "node .kiro/kiro-flow/kiro-hook-adapter.cjs session-bridge memory-inject session-restore auto-memory:import"
       }

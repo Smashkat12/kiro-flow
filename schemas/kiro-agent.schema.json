@@ -64,7 +64,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "sessionStart": { "$ref": "#/$defs/hookList" },
+        "agentSpawn": { "$ref": "#/$defs/hookList" },
         "userPromptSubmit": { "$ref": "#/$defs/hookList" },
         "preToolUse": { "$ref": "#/$defs/hookList" },
         "postToolUse": { "$ref": "#/$defs/hookList" },
@@ -73,6 +73,7 @@
     },
     "includeMcpJson": { "type": "boolean" },
     "model": { "type": "string" },
+    "keyboardShortcut": { "type": "string" },
     "welcomeMessage": { "type": "string" }
   },
   "$defs": {

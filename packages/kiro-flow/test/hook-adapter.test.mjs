@@ -76,7 +76,7 @@ test('translate: execute_bash tool_response gains numeric exit_code', () => {
 });
 
 test('translate: prompt and assistant_response pass through', () => {
-  const spawn = captures.find((c) => c.hook_event_name === 'sessionStart');
+  const spawn = captures.find((c) => c.hook_event_name === 'agentSpawn');
   assert.equal(translate(spawn).hook_event_name, 'SessionStart');
   assert.equal(translate(spawn).prompt, spawn.prompt);
   const stop = captures.find((c) => c.hook_event_name === 'stop');

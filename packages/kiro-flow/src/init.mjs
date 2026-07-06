@@ -134,12 +134,10 @@ export function buildOrchestratorAgent(coreKfNames, model = flagshipModel()) {
     toolsSettings: {
       subagent: { availableAgents: kfCore, trustedAgents: kfCore },
     },
-    // flagship UX — welcomeMessage is a real Kiro custom-agent field (the
-    // kiro-agent parser reads it), interactive planes only; NEVER on headless
-    // agents: a welcome would corrupt the shim's parsed output. (A
-    // keyboardShortcut field was dropped M16 — Kiro has no per-agent hotkey
-    // surface; the field validated against our schema but Kiro never read it.)
+    // M11 leftovers — flagship UX (interactive planes only; NEVER on headless
+    // agents: a welcome would corrupt the shim's parsed output).
     welcomeMessage: 'kf-orchestrator — I coordinate the kf-* agent library via native subagent fan-out + claude-flow swarm/memory. Give me an objective and I delegate. Try: "Build X: fan out to kf-backend-dev and kf-tester, then store the plan in memory."',
+    keyboardShortcut: 'ctrl+alt+o',
     hooks: buildKfHooks(),
     includeMcpJson: true,
   };
@@ -175,6 +173,7 @@ export function buildQueenAgent(coreKfNames, model = flagshipModel()) {
       subagent: { availableAgents: kfCore, trustedAgents: kfCore },
     },
     welcomeMessage: 'kf-queen — hive-mind coordinator. I run consensus-led swarms over claude-flow hive tools and fan out to specialist agents. Give me an objective; I convene, delegate, and reconcile. Try: "Ship feature Y with a 3-agent swarm and byzantine consensus on the design."',
+    keyboardShortcut: 'ctrl+alt+q',
     hooks: buildKfHooks(),
     includeMcpJson: true,
   };
@@ -201,6 +200,7 @@ export function buildDeepResearcherAgent(model = flagshipModel()) {
     tools: ['read', 'write', ...native, 'web_search', 'web_fetch', ...cfRefs],
     allowedTools: ['read', ...native, 'web_search', 'web_fetch', ...cfRefs],
     welcomeMessage: 'kf-deep-researcher — multi-angle web research with verified citations, findings persisted to claude-flow memory. Give me a question; I gather, cross-check, and cite. Try: "Research the tradeoffs of X vs Y and store a cited summary."',
+    keyboardShortcut: 'ctrl+alt+r',
     hooks: buildKfHooks(),
     includeMcpJson: true,
   };

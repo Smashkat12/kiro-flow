@@ -21,7 +21,7 @@ Per-agent, in `.kiro/agents/*.json` (accepted by `kiro-cli agent validate`):
 
 ```json
 "hooks": {
-  "sessionStart":       [ { "command": "..." } ],
+  "agentSpawn":       [ { "command": "..." } ],
   "userPromptSubmit": [ { "command": "..." } ],
   "preToolUse":       [ { "matcher": "fs_write", "command": "..." } ],
   "postToolUse":      [ { "matcher": "*",        "command": "..." } ],
@@ -32,26 +32,13 @@ Per-agent, in `.kiro/agents/*.json` (accepted by `kiro-cli agent validate`):
 Commands run with **cwd = the directory kiro-cli was launched from** (relative
 paths in `command` resolve against it — our hook blocks rely on this).
 
-> **M17 correction (IDE live test).** The spawn-time key was originally shipped
-> as `agentSpawn` — an internal label that Kiro does **not** recognise, so that
-> hook (session-bridge + memory-inject + session-restore + auto-memory import)
-> silently never fired in the Kiro IDE. Verified against the `kiro-agent`
-> extension bundle: the real inline-hook event is **`sessionStart`** (read off
-> the agent `hooks` object; `agentSpawn` has zero references). The emitter,
-> schema, adapter `EVENT_MAP`, and tests now use `sessionStart`. The adapter
-> also accepts both camel- and Pascal-case event names, since Kiro may report
-> `hook_event_name` as either the hook key (`sessionStart`) or the canonical
-> trigger (`SessionStart`). The other four keys already matched Kiro's
-> camelCase names and were unaffected. Still worth a live IDE confirmation that
-> the hook now actually fires (grep-level evidence is strong but not a run).
-
 ### stdin payload per event
 
 Common fields: `hook_event_name` (same camelCase string as the config key), `cwd`.
 
 | event | extra fields |
 |---|---|
-| `sessionStart` | `prompt` (the initial prompt, in `--no-interactive`) |
+| `agentSpawn` | `prompt` (the initial prompt, in `--no-interactive`) |
 | `userPromptSubmit` | `prompt` |
 | `preToolUse` | `tool_name`, `tool_input` |
 | `postToolUse` | `tool_name`, `tool_input`, `tool_response` `{success, result}` |
@@ -89,7 +76,7 @@ MCP tools appear as **`@server/tool`** — e.g. `@claude-flow/memory_store`.
 - Multiple hooks on one event all run; one hook blocking does not stop the
   others from executing.
 - **stdout is injected into model context** — verified for both
-  `userPromptSubmit` and `sessionStart` (the model could read a token printed by
+  `userPromptSubmit` and `agentSpawn` (the model could read a token printed by
   the hook). This is the channel M7 (memory injection) and M8 (guidance
   injection) will use.
 
@@ -100,7 +87,7 @@ into `.claude/helpers/hook-handler.cjs` subcommands. Kiro has 5 events:
 
 | CC event (ruflo handler) | Kiro event | kf hook block |
 |---|---|---|
-| SessionStart → `session-restore` + auto-memory `import` | `sessionStart` | `session-restore auto-memory:import` |
+| SessionStart → `session-restore` + auto-memory `import` | `agentSpawn` | `session-restore auto-memory:import` |
 | UserPromptSubmit → `route` | `userPromptSubmit` | `route` |
 | PreToolUse[Bash] → `pre-bash` (safety gate) | `preToolUse` matcher `execute_bash` | `pre-bash` |
 | PreToolUse[Write\|Edit\|MultiEdit] → `pre-edit` | `preToolUse` matcher `fs_write` | `pre-edit` |
@@ -138,7 +125,7 @@ Translation rules:
 
 | Kiro | Claude Code |
 |---|---|
-| `sessionStart/userPromptSubmit/preToolUse/postToolUse/stop` | `SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/Stop` |
+| `agentSpawn/userPromptSubmit/preToolUse/postToolUse/stop` | `SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/Stop` |
 | `execute_bash {command, working_dir}` | `Bash {command}` |
 | `fs_write {command:create, path, file_text}` | `Write {file_path, content}` |
 | `fs_write {command:str_replace, path, old_str, new_str}` | `Edit {file_path, old_string, new_string}` |

@@ -207,17 +207,20 @@ Probed the last three agent fields on kiro-cli 2.10.0:
   deep-researcher) as an orientation line. Deliberately **not** on kf-judge or
   library agents: they can run headless/as subagents, where a welcome would
   corrupt the shim's parsed output.
-- **`keyboardShortcut`** — ❌ **REMOVED (M16, IDE live test).** Was emitted on
-  the three flagships (ctrl+alt+o/q/r) on the assumption it gave an IDE
-  quick-launch. Live in Kiro 1.0.89 the shortcut does **nothing**: Kiro's
-  `kiro-agent` parser never reads the field (0 occurrences in the extension
-  bundle), and Kiro has **no per-agent hotkey surface** at all — its keybindings
-  are session-level (`kiroAgent.chat.*`) and no command launches a *named*
-  agent. Agents are invoked via the picker or `@mention` in chat. The field
-  validated only against *our* schema, so it was pure dead weight; dropped from
-  the schema, init, and tests. (Real Kiro custom-agent fields, confirmed against
-  the parser: name, description, prompt, tools, model, mcpServers, powers,
-  welcomeMessage; plus `trigger` for event/hook auto-invoke and `resources`.)
+- **`keyboardShortcut`** — a **valid** Kiro agent field (confirmed against
+  `kiro-cli agent validate`, the authoritative schema oracle: it accepts
+  `keyboardShortcut` and rejects genuinely-unknown fields). On the flagships as
+  a quick-launch (ctrl+alt+o/q/r). **Runtime caveat:** a single live IDE press
+  (Ctrl+Alt+O, Kiro 1.0.89) did **not** visibly launch the agent — likely a
+  keybinding collision or the hotkey needs chat focus; the field itself is
+  schema-valid and harmless. Runtime hotkey behavior remains a work-side
+  checklist item (retest with a non-colliding binding).
+  > **Lesson (do not repeat):** an earlier pass removed this field after grepping
+  > the Kiro IDE JS bundle and finding no reference — the bundle is minified and
+  > splits concerns across compiled Rust (`kiro-cli`) + JS, so absence there
+  > proves nothing. The same flawed method mis-"fixed" the hooks key
+  > (agentSpawn→sessionStart) and broke all agents. **`kiro-cli agent validate
+  > --path <file>` is the schema authority — use it, not bundle grep.**
 - **`toolAliases`** — accepted but **no observable effect** (tested alias→real,
   real→alias, alias-in-`tools[]`; none renamed or resolved a tool — same as a
   bogus name). Emitted by nothing; documented in the schema as IDE-unverified,

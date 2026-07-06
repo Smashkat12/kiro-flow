@@ -39,12 +39,8 @@ export function buildKfHooks() {
   const run = (...specs) => `node ${HOOK_ADAPTER_REL} ${specs.join(' ')}`;
   return {
     // memory-inject first: the recall block must reach context even when the
-    // ruflo handlers are slow; session-bridge records the Kiro session id (M7).
-    // Key is `sessionStart` — Kiro's real spawn-time inline-hook event (verified
-    // against the kiro-agent bundle: `sessionStart` is read off the agent hooks
-    // object, `agentSpawn` is unknown to it). M17 fix: the field previously
-    // shipped as `agentSpawn` and silently never fired in the IDE.
-    sessionStart: [{ command: run('session-bridge', 'memory-inject', 'session-restore', 'auto-memory:import') }],
+    // ruflo handlers are slow; session-bridge records the Kiro session id (M7)
+    agentSpawn: [{ command: run('session-bridge', 'memory-inject', 'session-restore', 'auto-memory:import') }],
     userPromptSubmit: [{ command: run('route') }],
     preToolUse: [
       { matcher: 'execute_bash', command: run('pre-bash') },

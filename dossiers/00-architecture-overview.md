@@ -38,7 +38,7 @@ Optional heavy deps (`agentic-flow`, `agentdb`, `ruvector`) degrade gracefully t
 |---|---|
 | `claude -p` headless | `kiro-cli chat --no-interactive --agent X --trust-tools=… --effort …` (KIRO_API_KEY, Pro+) |
 | `.claude/agents/*.md` | `.kiro/agents/*.json` (prompt `file://`, hot-reload) |
-| settings.json hooks (10 events) | agent-config hooks: sessionStart, userPromptSubmit, preToolUse (blocking), postToolUse, stop. No PreCompact/SubagentStart-Stop/Notification — degradations documented in M4 |
+| settings.json hooks (10 events) | agent-config hooks: agentSpawn, userPromptSubmit, preToolUse (blocking), postToolUse, stop. No PreCompact/SubagentStart-Stop/Notification — degradations documented in M4 |
 | Task tool | native `subagent` tool (≤4 parallel, DAG, trustedAgents) |
 | `claude mcp add` / `.mcp.json` | `kiro-cli mcp add` / workspace `mcp.json` / `.kiro/settings/mcp.json` |
 | CLAUDE.md | `.kiro/steering/*.md` |

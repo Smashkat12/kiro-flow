@@ -35,22 +35,13 @@ const TIMEOUT_MS = Number(process.env.KIRO_FLOW_HOOK_TIMEOUT_MS || 8000);
 
 // ── Kiro → Claude Code translation ─────────────────────────────────────────
 
-// Kiro's inline agent-hook event names are camelCase (sessionStart, preToolUse,
-// …); ruflo/Claude-Code handlers expect PascalCase. We accept BOTH casings for
-// each event because Kiro may report the payload's hook_event_name as either the
-// camelCase hook key or the canonical PascalCase trigger — mapping both removes
-// that uncertainty. (`sessionStart`, not `agentSpawn`: agentSpawn is not a Kiro
-// event and the hook never fired under it — M17.)
 const EVENT_MAP = {
-  sessionStart: 'SessionStart', SessionStart: 'SessionStart',
-  userPromptSubmit: 'UserPromptSubmit', UserPromptSubmit: 'UserPromptSubmit',
-  preToolUse: 'PreToolUse', PreToolUse: 'PreToolUse',
-  postToolUse: 'PostToolUse', PostToolUse: 'PostToolUse',
-  stop: 'Stop', Stop: 'Stop',
+  agentSpawn: 'SessionStart',
+  userPromptSubmit: 'UserPromptSubmit',
+  preToolUse: 'PreToolUse',
+  postToolUse: 'PostToolUse',
+  stop: 'Stop',
 };
-
-/** Canonical (PascalCase, Claude-Code) event name for whatever casing Kiro sent. */
-const canonEvent = (e) => EVENT_MAP[e] ?? e;
 
 /** fs_write is Kiro's whole write/edit surface; split it the way CC names it. */
 function mapFsWrite(input) {
@@ -206,10 +197,10 @@ function builtinSessionBridge(kiro, cwd) {
   const now = new Date().toISOString();
   const s = store.sessions[sid] ?? { firstSeen: now, cwd };
   s.lastSeen = now;
-  if (canonEvent(kiro.hook_event_name) === 'SessionStart' && kiro.prompt != null) {
+  if (kiro.hook_event_name === 'agentSpawn' && kiro.prompt != null) {
     s.promptHead = String(kiro.prompt).slice(0, 160);
   }
-  if (canonEvent(kiro.hook_event_name) === 'Stop' && kiro.assistant_response != null) {
+  if (kiro.hook_event_name === 'stop' && kiro.assistant_response != null) {
     s.lastResponseHead = String(kiro.assistant_response).slice(0, 160);
   }
   store.sessions[sid] = s;
