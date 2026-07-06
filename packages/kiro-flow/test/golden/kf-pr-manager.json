@@ -106,7 +106,7 @@
     "@claude-flow/workflow_validate"
   ],
   "hooks": {
-    "agentSpawn": [
+    "sessionStart": [
       {
         "command": "node .kiro/kiro-flow/kiro-hook-adapter.cjs session-bridge memory-inject session-restore auto-memory:import"
       }

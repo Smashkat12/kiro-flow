@@ -64,7 +64,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "agentSpawn": { "$ref": "#/$defs/hookList" },
+        "sessionStart": { "$ref": "#/$defs/hookList" },
         "userPromptSubmit": { "$ref": "#/$defs/hookList" },
         "preToolUse": { "$ref": "#/$defs/hookList" },
         "postToolUse": { "$ref": "#/$defs/hookList" },

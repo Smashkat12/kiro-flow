@@ -58,7 +58,7 @@ test('memory-inject (process): cache hit prints the recall block into stdout', (
     mkdirSync(dirname(cache), { recursive: true });
     writeFileSync(cache, JSON.stringify({ count: ENTRIES.length, entries: ENTRIES }));
     const res = runAdapter(dir, ['memory-inject'],
-      { hook_event_name: 'agentSpawn', cwd: dir, prompt: 'which database did we pick for embeddings?' },
+      { hook_event_name: 'sessionStart', cwd: dir, prompt: 'which database did we pick for embeddings?' },
       { KIRO_FLOW_RECALL_TTL_MS: String(10 ** 12) }); // fresh — no detached refresh
     assert.equal(res.status, 0);
     assert.match(res.stdout, /db-choice: We decided to use PostgreSQL 16/);
@@ -69,19 +69,19 @@ test('memory-inject (process): no cache → silent success, never blocks the age
   const dir = mkdtempSync(join(tmpdir(), 'kf-m7-nocache-'));
   try {
     const res = runAdapter(dir, ['memory-inject'],
-      { hook_event_name: 'agentSpawn', cwd: dir, prompt: 'anything' },
+      { hook_event_name: 'sessionStart', cwd: dir, prompt: 'anything' },
       { KIRO_FLOW_RUFLO_SPEC: 'definitely-not-a-package' }); // refresh must fail open too
     assert.equal(res.status, 0);
     assert.equal(res.stdout, '');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('session-bridge (process): agentSpawn records, stop updates the same id', () => {
+test('session-bridge (process): sessionStart records, stop updates the same id', () => {
   const dir = mkdtempSync(join(tmpdir(), 'kf-m7-bridge-'));
   try {
     const env = { KIRO_SESSION_ID: 'kiro-sess-42' };
     let res = runAdapter(dir, ['session-bridge'],
-      { hook_event_name: 'agentSpawn', cwd: dir, prompt: 'build the thing' }, env);
+      { hook_event_name: 'sessionStart', cwd: dir, prompt: 'build the thing' }, env);
     assert.equal(res.status, 0);
     res = runAdapter(dir, ['session-bridge'],
       { hook_event_name: 'stop', cwd: dir, assistant_response: 'the thing is built' }, env);
