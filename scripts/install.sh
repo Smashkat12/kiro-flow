@@ -17,6 +17,8 @@
 #   --init, -i            Initialize current directory (default: on)
 #   --no-init             Skip project initialization
 #   --full, -f            Full setup (global + doctor + init)
+#   --default-agent, -a <name>  Set a kf-* agent (e.g. kf-orchestrator) as kiro-cli's
+#                         default so its hooks fire on every bare `kiro-cli chat`
 #   --version=X.X.X       Specific ruflo version (default: ~3.23.0)
 #   --help, -h            Show help
 #
@@ -24,6 +26,7 @@
 #   export RUFLO_VERSION=3.23.0      # ruflo version to install
 #   export KIRO_FLOW_MINIMAL=1
 #   export KIRO_FLOW_GLOBAL=1
+#   export KIRO_FLOW_DEFAULT_AGENT=kf-orchestrator                  # default agent for bare chats
 #   export KIRO_FLOW_REPO=https://github.com/smashkat12/kiro-flow   # source of kiro-flow itself
 #   export KIRO_FLOW_LOCAL=/path/to/checkout                        # use a local checkout instead
 #   export KIRO_FLOW_DRY_RUN=1       # print planned actions, change nothing
@@ -38,6 +41,7 @@ MINIMAL="${KIRO_FLOW_MINIMAL:-0}"
 GLOBAL="${KIRO_FLOW_GLOBAL:-0}"
 RUN_DOCTOR="${KIRO_FLOW_DOCTOR:-0}"
 RUN_INIT="${KIRO_FLOW_INIT:-1}"
+DEFAULT_AGENT="${KIRO_FLOW_DEFAULT_AGENT:-}"
 REPO="${KIRO_FLOW_REPO:-https://github.com/smashkat12/kiro-flow}"
 LOCAL_CHECKOUT="${KIRO_FLOW_LOCAL:-}"
 DRY_RUN="${KIRO_FLOW_DRY_RUN:-0}"
@@ -52,6 +56,8 @@ while [[ $# -gt 0 ]]; do
         --init|-i) RUN_INIT="1"; shift ;;
         --no-init) RUN_INIT="0"; shift ;;
         --full|-f) GLOBAL="1"; RUN_DOCTOR="1"; RUN_INIT="1"; shift ;;
+        --default-agent|-a) DEFAULT_AGENT="${2:-}"; shift 2 ;;
+        --default-agent=*) DEFAULT_AGENT="${1#*=}"; shift ;;
         --version=*) VERSION="${1#*=}"; shift ;;
         --dry-run) DRY_RUN="1"; shift ;;
         --help|-h)
@@ -167,7 +173,11 @@ echo ""
 # ── init ──
 if [ "$RUN_INIT" = "1" ]; then
     step "Initializing project in $(pwd)..."
-    run node "$KF_ROOT/packages/kiro-flow/bin/kiro-flow.js" init || warning "init reported issues — see above"
+    if [ -n "$DEFAULT_AGENT" ]; then
+        run node "$KF_ROOT/packages/kiro-flow/bin/kiro-flow.js" init --default-agent "$DEFAULT_AGENT" || warning "init reported issues — see above"
+    else
+        run node "$KF_ROOT/packages/kiro-flow/bin/kiro-flow.js" init || warning "init reported issues — see above"
+    fi
     echo ""
 fi
 

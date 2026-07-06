@@ -5,6 +5,8 @@
  */
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { convertAgents } from '../src/convert/agents.mjs';
 import { initWorkspace, cleanClaudeCode } from '../src/init.mjs';
 import { runDoctor, formatDoctorReport } from '../src/doctor.mjs';
@@ -57,6 +59,7 @@ Options (init):
   --skip-ruflo-init   only the Kiro-side steps (convert, mcp.json, steering, orchestrator)
   --keep-cc           keep inert Claude-Code files (default: remove CLAUDE.md, .mcp.json, .claude/settings.json)
   --exclude <cats>    comma-sep agent source categories to drop (e.g. flow-nexus); persisted + pruned on re-init
+  --default-agent <n> set <n> (a kf-* agent) as kiro-cli's default so its hooks fire on every bare chat (e.g. kf-orchestrator)
 
 Options (convert agents):
   --source <dir>      persona dir (default: .claude/agents)
@@ -142,6 +145,7 @@ if (cmd === 'convert' && sub === 'agents') {
       'keep-cc': { type: 'boolean', default: false },
       exclude: { type: 'string' },
       plugins: { type: 'string' },
+      'default-agent': { type: 'string' },
     },
   });
   const dir = resolve(values.dir);
@@ -151,6 +155,26 @@ if (cmd === 'convert' && sub === 'agents') {
   console.log(`kiro-flow init → ${dir}\n`);
   const { steps } = initWorkspace({ dir, force: values.force, skipRufloInit: values['skip-ruflo-init'], cleanCc: !values['keep-cc'], excludeCategories, includePlugins });
   for (const s of steps) console.log(`  ${s.status === 'skipped' ? '·' : '✓'} ${s.step}: ${s.detail ?? s.status}`);
+
+  // --default-agent: make a converted kf-* agent the one `kiro-cli chat` launches
+  // with no --agent, so its hook block (memory-inject / session-restore / route)
+  // fires on every bare chat. Opt-in; fail-open so a missing kiro-cli never
+  // breaks init. (kf-orchestrator is heavy — a lighter kf-* also carries hooks.)
+  const defaultAgent = values['default-agent'];
+  if (defaultAgent) {
+    const agentFile = resolve(dir, '.kiro', 'agents', `${defaultAgent}.json`);
+    if (!existsSync(agentFile)) {
+      console.log(`  · default agent: ${defaultAgent} not found in .kiro/agents — skipped (run without --default-agent, or check the name)`);
+    } else {
+      try {
+        execFileSync('kiro-cli', ['agent', 'set-default', defaultAgent], { stdio: 'ignore', timeout: 30_000 });
+        console.log(`  ✓ default agent: kiro-cli chat now launches ${defaultAgent} (hooks on by default; revert with 'kiro-cli agent set-default kiro_default')`);
+      } catch (err) {
+        const why = err.code === 'ENOENT' ? 'kiro-cli not found on PATH' : 'kiro-cli agent set-default failed';
+        console.log(`  · default agent: ${why} — set it later with 'kiro-cli agent set-default ${defaultAgent}'`);
+      }
+    }
+  }
   console.log('\nNext: kiro-flow doctor   (checks kiro-cli, MCP handshake, agents)');
 } else if (cmd === 'doctor') {
   const { values } = parseArgs({
