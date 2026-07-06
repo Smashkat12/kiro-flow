@@ -194,7 +194,7 @@ test('doctor: all green with mocked kiro-cli and fake MCP server', async () => {
   const binDir = join(dir, 'fake-bin');
   mkdirSync(binDir);
   const kiroCliPath = join(binDir, 'kiro-cli');
-  writeFileSync(kiroCliPath, '#!/bin/sh\ncase "$1" in --version) echo "kiro-cli 1.2.3";; whoami) echo "smash@work (sso)";; *) exit 1;; esac\n');
+  writeFileSync(kiroCliPath, '#!/bin/sh\ncase "$1" in --version) echo "kiro-cli 1.2.3";; whoami) echo "smash@work (sso)";; chat) echo "ok";; *) exit 1;; esac\n');
   chmodSync(kiroCliPath, 0o755);
   const origPath = process.env.PATH;
   process.env.PATH = `${binDir}:${origPath}`;
@@ -212,11 +212,42 @@ test('doctor: all green with mocked kiro-cli and fake MCP server', async () => {
     const byId = Object.fromEntries(checks.map((c) => [c.id, c]));
     assert.equal(byId['kiro-cli'].status, 'ok');
     assert.equal(byId['kiro-auth'].status, 'ok');
+    // headless probe ran the real `chat --no-interactive` path against the stub
+    assert.equal(byId['kiro-headless'].status, 'ok', byId['kiro-headless'].detail);
     assert.equal(byId['mcp-handshake'].status, 'ok', byId['mcp-handshake'].detail);
     assert.match(byId['mcp-handshake'].detail, /fake-ruflo 9.9.9 — 260 tools/);
     assert.equal(byId['memory-db'].status, 'ok');
     assert.equal(byId.agents.status, 'ok');
     assert.equal(failed, false);
+  } finally {
+    process.env.PATH = origPath;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('doctor: headless probe warns when interactive auth works but `chat` fails, skips under --no-headless', async () => {
+  const dir = makeFixtureWorkspace();
+  const binDir = join(dir, 'fake-bin');
+  mkdirSync(binDir);
+  const kiroCliPath = join(binDir, 'kiro-cli');
+  // logged-in interactively (whoami ok) but headless turns fail — the exact
+  // work-laptop SSO gap the probe exists to surface.
+  writeFileSync(kiroCliPath, '#!/bin/sh\ncase "$1" in --version) echo "kiro-cli 1.2.3";; whoami) echo "smash@work (sso)";; chat) echo "sso: headless auth required" >&2; exit 1;; *) exit 1;; esac\n');
+  chmodSync(kiroCliPath, 0o755);
+  const origPath = process.env.PATH;
+  process.env.PATH = `${binDir}:${origPath}`;
+  try {
+    let { checks } = await runDoctor({ dir, checkMcp: false });
+    let byId = Object.fromEntries(checks.map((c) => [c.id, c]));
+    assert.equal(byId['kiro-auth'].status, 'ok');
+    assert.equal(byId['kiro-headless'].status, 'warn');
+    assert.match(byId['kiro-headless'].detail, /KIRO_API_KEY|headless/);
+
+    // --no-headless skips the probe (no credit spent)
+    ({ checks } = await runDoctor({ dir, checkMcp: false, checkHeadless: false }));
+    byId = Object.fromEntries(checks.map((c) => [c.id, c]));
+    assert.equal(byId['kiro-headless'].status, 'skip');
+    assert.match(byId['kiro-headless'].detail, /disabled/);
   } finally {
     process.env.PATH = origPath;
     rmSync(dir, { recursive: true, force: true });
@@ -262,6 +293,7 @@ test('doctor: missing kiro-cli and missing agents are failures', async () => {
     const byId = Object.fromEntries(checks.map((c) => [c.id, c]));
     assert.equal(byId['kiro-cli'].status, 'fail');
     assert.equal(byId['kiro-auth'].status, 'skip');
+    assert.equal(byId['kiro-headless'].status, 'skip');
     assert.equal(byId['mcp-config'].status, 'fail');
     assert.equal(byId.agents.status, 'fail');
     assert.equal(failed, true);

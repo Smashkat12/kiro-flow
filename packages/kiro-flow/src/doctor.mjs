@@ -119,9 +119,12 @@ export function mcpHandshake(server, cwd, timeoutMs = 120_000) {
  * @param {object} opts
  * @param {string} opts.dir
  * @param {boolean} [opts.checkMcp=true]  live MCP handshake (slow on cold npx cache)
+ * @param {boolean} [opts.checkHeadless=true]  spend one real kiro-cli turn to
+ *   prove the headless (shim/daemon/worker) auth path works — the work-laptop
+ *   SSO blocker. Disable with --no-headless to skip the credit + latency.
  * @returns {Promise<{checks: Array, failed: boolean}>}
  */
-export async function runDoctor({ dir, checkMcp = true }) {
+export async function runDoctor({ dir, checkMcp = true, checkHeadless = true }) {
   const checks = [];
   const add = (id, label, result) => checks.push({ id, label, ...result });
 
@@ -139,12 +142,36 @@ export async function runDoctor({ dir, checkMcp = true }) {
     add('kiro-cli', 'kiro-cli installed', ok(kiro.out));
     // auth probe — `kiro-cli whoami` verified against kiro-cli 2.10.0
     const auth = tryExec('kiro-cli', ['whoami']);
-    add('kiro-auth', 'Kiro authentication', auth.out !== undefined
+    const loggedIn = auth.out !== undefined;
+    add('kiro-auth', 'Kiro authentication', loggedIn
       ? ok(auth.out.split('\n')[0])
       : warn('not logged in — run `kiro-cli login` (headless mode may additionally need KIRO_API_KEY)'));
+
+    // headless auth probe — the actual work-laptop blocker. `whoami` passing
+    // only proves the *interactive* SSO session is live; the shim/daemon/worker
+    // plane runs `kiro-cli chat --no-interactive` (see shim/claude:89), which on
+    // a governed laptop can fail even when interactive auth works. Spend one
+    // real minimal turn on that exact path so doctor reports the gap directly
+    // rather than the user discovering it when a background worker silently dies.
+    if (checkHeadless && loggedIn) {
+      const probe = tryExec('kiro-cli', ['chat', '--no-interactive', 'reply with the single word: ok'], 60_000);
+      if (probe.out !== undefined) {
+        add('kiro-headless', 'Headless turns (shim/daemon/worker)',
+          ok('`kiro-cli chat --no-interactive` succeeds — the background worker plane will run'));
+      } else {
+        const why = (probe.err?.stderr || probe.err?.message || String(probe.err ?? '')).split('\n')[0].slice(0, 120);
+        add('kiro-headless', 'Headless turns (shim/daemon/worker)',
+          warn(`interactive auth OK but \`kiro-cli chat --no-interactive\` failed (${why}) — the headless plane (kiro-flow daemon/worker) needs KIRO_API_KEY or a headless-capable login; interactive IDE/CLI use is unaffected`));
+      }
+    } else if (checkHeadless) {
+      add('kiro-headless', 'Headless turns (shim/daemon/worker)', skip('not logged in — resolve kiro-auth first'));
+    } else {
+      add('kiro-headless', 'Headless turns (shim/daemon/worker)', skip('disabled (--no-headless)'));
+    }
   } else {
     add('kiro-cli', 'kiro-cli installed', fail('not found — install from kiro.dev/downloads (interactive-only dev at home is fine: converted agents + MCP config still work in the IDE)'));
     add('kiro-auth', 'Kiro authentication', skip('kiro-cli missing'));
+    add('kiro-headless', 'Headless turns (shim/daemon/worker)', skip('kiro-cli missing'));
   }
 
   // MCP registration

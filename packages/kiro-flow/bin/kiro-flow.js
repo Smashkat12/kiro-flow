@@ -70,6 +70,7 @@ Options (convert agents):
 Options (doctor):
   --dir <dir>         workspace to check (default: cwd)
   --no-mcp            skip the live MCP handshake (slow on cold npx cache)
+  --no-headless       skip the headless-auth probe (avoids spending 1 kiro-cli turn)
   --json              machine-readable output
 
 Options (daemon/worker):
@@ -157,11 +158,12 @@ if (cmd === 'convert' && sub === 'agents') {
     options: {
       dir: { type: 'string', default: '.' },
       mcp: { type: 'boolean', default: true },
+      headless: { type: 'boolean', default: true },
       json: { type: 'boolean', default: false },
     },
     allowNegative: true,
   });
-  const { checks, failed } = await runDoctor({ dir: resolve(values.dir), checkMcp: values.mcp });
+  const { checks, failed } = await runDoctor({ dir: resolve(values.dir), checkMcp: values.mcp, checkHeadless: values.headless });
   console.log(values.json ? JSON.stringify({ checks, failed }, null, 2) : formatDoctorReport(checks));
   process.exit(failed ? 1 : 0);
 } else if (cmd === 'daemon') {
